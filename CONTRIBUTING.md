@@ -64,7 +64,7 @@ Switch into the root directory of the cloned repository and build OpenTofu using
 
 ```sh
 cd opentofu
-go install .
+go install ./cmd/tofu
 ```
 
 The first time you run the `go install` command, the Go toolchain will download any library dependencies that you don't already have in your Go modules cache. Subsequent builds will be faster because these dependencies will already be available on your local disk.
