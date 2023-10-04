@@ -46,19 +46,21 @@ Additionally, please update [the changelog](CHANGELOG.md) if you're making any u
 
 ## Working on the Code
 
-If you wish to work on the OpenTofu CLI source code, you'll first need to install the [Go](https://golang.org/) compiler and the version control system [Git](https://git-scm.com/) or build with the [Go Docker container](https://hub.docker.com/_/golang).
+If you wish to work on the OpenTofu CLI source code, you'll first need to install the [Git](https://git-scm.com/) version control system. Use Git to clone this repository into a location of your choice. OpenTofu uses [Go Modules](https://blog.golang.org/using-go-modules), and so you should *not* clone it inside your `GOPATH`.
 
-At this time the OpenTofu development environment is targeting only Linux and Mac OS X systems. While OpenTofu itself is compatible with Windows, unfortunately the unit test suite currently contains Unix-specific assumptions around maximum path lengths, path separators, etc.
+After that, you can either install the [Go](https://golang.org/) compiler locally, or use [Docker](https://www.docker.com/) to build in a container. At this time the OpenTofu development environment targets only Linux and MacOS systems. While OpenTofu itself is compatible with Windows, unfortunately the unit test suite currently contains Unix-specific assumptions around maximum path lengths, path separators, etc. This means that using Docker is the best option if working on Windows.
+
+If using Visual Studio Code or IntelliJ, a [devcontainer](.devcontainer.json) is included which integrates directly with Docker. Simply open the repository and you should be prompted to re-open in the container. At this point you can proceed as if [building natively](#building-natively) on Linux.
+
+If not using the devcontainer (if using an incompatible IDE), you can still still build with Docker (and thus need not install any dependencies locally) by running docker commands directly. See the [Building with Docker](#building-with-docker) section.
+
+### Building Natively
 
 Refer to the file [`.go-version`](.go-version) to see which version of Go OpenTofu is currently built with. Other versions will often work, but if you run into any build or testing problems please try with the specific Go version indicated. You can optionally simplify the installation of multiple specific versions of Go on your system by installing [`goenv`](https://github.com/syndbg/goenv), which reads `.go-version` and automatically selects the correct Go version.
 
-Use Git to clone this repository into a location of your choice. OpenTofu is using [Go Modules](https://blog.golang.org/using-go-modules), and so you should *not* clone it inside your `GOPATH`.
-
-### Build with Go
-
 Switch into the root directory of the cloned repository and build OpenTofu using the Go toolchain in the standard way:
 
-```
+```sh
 cd opentofu
 go install .
 ```
@@ -84,11 +86,11 @@ go test ./internal/command/...
 go test ./internal/addrs
 ```
 
-### Build with Docker
+### Building with Docker
 
-Install [Docker](https://docs.docker.com/engine/install/) and, if you're on Linux, run the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/).
+The easiest way to get started with Docker on Windows and MacOS is using [Docker Desktop](https://www.docker.com/products/docker-desktop/), though other solutions exist. On Linux, follow the steps to [install Docker Engine](https://docs.docker.com/engine/install/) and run the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/). Then to build, run:
 
-```
+```sh
 docker run --rm -v "$PWD":/usr/src/opentofu -w /usr/src/opentofu golang:1.20.7 go build -v -buildvcs=false .
 ```
 
