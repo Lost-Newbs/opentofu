@@ -58,6 +58,8 @@ If not using the devcontainer (if using an incompatible IDE), you can still stil
 
 Refer to the file [`.go-version`](.go-version) to see which version of Go OpenTofu is currently built with. Other versions will often work, but if you run into any build or testing problems please try with the specific Go version indicated. You can optionally simplify the installation of multiple specific versions of Go on your system by installing [`goenv`](https://github.com/syndbg/goenv), which reads `.go-version` and automatically selects the correct Go version.
 
+### Build with Go
+
 Switch into the root directory of the cloned repository and build OpenTofu using the Go toolchain in the standard way:
 
 ```sh
