@@ -18,6 +18,7 @@ Generally, we appreciate external contributions very much and would love to work
 
 - [Contributing a Code Change](#contributing-a-code-change)
 - [Working on the Code](#working-on-the-code)
+- [Adding or updating dependencies](#adding-or-updating-dependencies)
 - [Acceptance Tests: Testing interactions with external services](#acceptance-tests-testing-interactions-with-external-services)
 - [Generated Code](#generated-code)
 
