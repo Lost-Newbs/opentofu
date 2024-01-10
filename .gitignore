@@ -18,10 +18,13 @@ website/node_modules
 *.test
 *.iml
 
-/opentofu
+/tofu
 
 website/vendor
 vendor/
+
+# VSCode debugging configurations
+.vscode/launch.json
 
 # Coverage
 coverage.txt

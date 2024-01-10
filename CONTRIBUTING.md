@@ -10,14 +10,13 @@ All major changes to OpenTofu Core go through the public RFC process, including 
 
 Generally, we appreciate external contributions very much and would love to work with you on them. **However, please make sure to read the [Contributing a Code Change](#contributing-a-code-change) section prior to making a contribution.**
 
-**Important Note: Since we're still in the cleanup phase of making this repository ready for the first alpha release, we encourage you to wait with any code contributions until this first alpha release is out, to avoid conflicts.**
-
 ---
 
 <!-- MarkdownTOC autolink="true" -->
 
 - [Contributing a Code Change](#contributing-a-code-change)
 - [Working on the Code](#working-on-the-code)
+- [Adding or updating dependencies](#adding-or-updating-dependencies)
 - [Acceptance Tests: Testing interactions with external services](#acceptance-tests-testing-interactions-with-external-services)
 - [Generated Code](#generated-code)
 
@@ -46,21 +45,25 @@ Additionally, please update [the changelog](CHANGELOG.md) if you're making any u
 
 ## Working on the Code
 
-If you wish to work on the OpenTofu CLI source code, you'll first need to install the [Go](https://golang.org/) compiler and the version control system [Git](https://git-scm.com/) or build with the [Go Docker container](https://hub.docker.com/_/golang).
+If you wish to work on the OpenTofu CLI source code, you'll first need to install the [Git](https://git-scm.com/) version control system. Use Git to clone this repository into a location of your choice. OpenTofu uses [Go Modules](https://blog.golang.org/using-go-modules), and so you should *not* clone it inside your `GOPATH`.
 
-At this time the OpenTofu development environment is targeting only Linux and Mac OS X systems. While OpenTofu itself is compatible with Windows, unfortunately the unit test suite currently contains Unix-specific assumptions around maximum path lengths, path separators, etc.
+After that, you can either install the [Go](https://golang.org/) compiler locally, or use [Docker](https://www.docker.com/) to build in a container. At this time the OpenTofu development environment targets only Linux and MacOS systems. While OpenTofu itself is compatible with Windows, unfortunately the unit test suite currently contains Unix-specific assumptions around maximum path lengths, path separators, etc. This means that using Docker is the best option if working on Windows.
+
+If using Visual Studio Code or IntelliJ, a [devcontainer](.devcontainer.json) is included which integrates directly with Docker. Simply open the repository and you should be prompted to re-open in the container. At this point you can proceed as if [building natively](#building-natively) on Linux.
+
+If not using the devcontainer (if using an incompatible IDE), you can still still build with Docker (and thus need not install any dependencies locally) by running docker commands directly. See the [Building with Docker](#building-with-docker) section.
+
+### Building Natively
 
 Refer to the file [`.go-version`](.go-version) to see which version of Go OpenTofu is currently built with. Other versions will often work, but if you run into any build or testing problems please try with the specific Go version indicated. You can optionally simplify the installation of multiple specific versions of Go on your system by installing [`goenv`](https://github.com/syndbg/goenv), which reads `.go-version` and automatically selects the correct Go version.
-
-Use Git to clone this repository into a location of your choice. OpenTofu is using [Go Modules](https://blog.golang.org/using-go-modules), and so you should *not* clone it inside your `GOPATH`.
 
 ### Build with Go
 
 Switch into the root directory of the cloned repository and build OpenTofu using the Go toolchain in the standard way:
 
-```
+```sh
 cd opentofu
-go install .
+go install ./cmd/tofu
 ```
 
 The first time you run the `go install` command, the Go toolchain will download any library dependencies that you don't already have in your Go modules cache. Subsequent builds will be faster because these dependencies will already be available on your local disk.
@@ -84,13 +87,15 @@ go test ./internal/command/...
 go test ./internal/addrs
 ```
 
-### Build with Docker
+### Building with Docker
 
-Install [Docker](https://docs.docker.com/engine/install/) and, if you're on Linux, run the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/).
+The easiest way to get started with Docker on Windows and MacOS is using [Docker Desktop](https://www.docker.com/products/docker-desktop/), though other solutions exist. On Linux, follow the steps to [install Docker Engine](https://docs.docker.com/engine/install/) and run the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/). Then to build, run:
 
+```sh
+docker run --rm -v "$PWD":/usr/src/opentofu -w /usr/src/opentofu golang:1.20.7 GOOS=linux GOARCH=amd64 go build -v -buildvcs=false .
 ```
-docker run --rm -v "$PWD":/usr/src/opentofu -w /usr/src/opentofu golang:1.20.7 go build -v -buildvcs=false .
-```
+
+Replace the values for `GOOS` snd `GOARCH` with those of your preferred target, e.g. `GOOS=windows` to build a Windows binary.
 
 This will create the `opentofu` binary in the current working directory, which you can run with `./opentofu --version` or [move it to $PATH](https://ubuntuforums.org/showthread.php?t=1056425) for Linux to find it running just `opentofu --version`.
 
@@ -122,6 +127,24 @@ TF_ACC=1 go test ./internal/initwd
 ```
 
 Because the acceptance tests depend on services outside of the OpenTofu codebase, and because the acceptance tests are usually used only when making changes to the systems they cover, it is common and expected that drift in those external systems will cause test failures. Because of this, prior to working on a system covered by acceptance tests it's important to run the existing tests for that system in an *unchanged* work tree first and respond to any test failures that preexist, to avoid misinterpreting such failures as bugs in your new changes.
+
+### Integration Tests: Testing interactions with external backends
+
+OpenTofu supports various [backends](https://opentofu.org/docs/language/settings/backends/configuration). We run integration test against them to ensure no side effects when using OpenTofu.
+
+Execute to list all available commands to run tests:
+
+```commandline
+make list-integration-tests
+```
+
+From the list of output commands, you can execute those which involve backends you intend to test against.
+
+For example, execute the command to run integration tests with s3 backend:
+
+```commandline
+make test-s3
+```
 
 ## Generated Code
 

@@ -202,7 +202,7 @@ resource "implicit_thing" "b" {
 
 	// Validate and Plan are the two entry points where we explicitly verify
 	// the available plugins match what the configuration needs. For other
-	// operations we typically fail more deeply in Terraform Core, with
+	// operations we typically fail more deeply in OpenTofu Core, with
 	// potentially-less-helpful error messages, because getting there would
 	// require doing some pretty weird things that aren't common enough to
 	// be worth the complexity to check for them.
@@ -232,12 +232,12 @@ resource "implicit_thing" "b" {
 				tfdiags.Sourceless(
 					tfdiags.Error,
 					"Missing required provider",
-					"This configuration requires provider registry.terraform.io/hashicorp/implicit, but that provider isn't available. You may be able to install it automatically by running:\n  tofu init",
+					"This configuration requires provider registry.opentofu.org/hashicorp/implicit, but that provider isn't available. You may be able to install it automatically by running:\n  tofu init",
 				),
 				tfdiags.Sourceless(
 					tfdiags.Error,
 					"Missing required provider",
-					"This configuration requires provider registry.terraform.io/hashicorp/implicit2, but that provider isn't available. You may be able to install it automatically by running:\n  tofu init",
+					"This configuration requires provider registry.opentofu.org/hashicorp/implicit2, but that provider isn't available. You may be able to install it automatically by running:\n  tofu init",
 				),
 				tfdiags.Sourceless(
 					tfdiags.Error,
@@ -745,7 +745,7 @@ func contextOptsForPlanViaFile(t *testing.T, configSnap *configload.Snapshot, pl
 
 // legacyPlanComparisonString produces a string representation of the changes
 // from a plan and a given state togther, as was formerly produced by the
-// String method of terraform.Plan.
+// String method of tofu.Plan.
 //
 // This is here only for compatibility with existing tests that predate our
 // new plan and state types, and should not be used in new tests. Instead, use
@@ -761,7 +761,7 @@ func legacyPlanComparisonString(state *states.State, changes *plans.Changes) str
 
 // legacyDiffComparisonString produces a string representation of the changes
 // from a planned changes object, as was formerly produced by the String method
-// of terraform.Diff.
+// of tofu.Diff.
 //
 // This is here only for compatibility with existing tests that predate our
 // new plan types, and should not be used in new tests. Instead, use a library
@@ -1011,18 +1011,18 @@ func logDiagnostics(t *testing.T, diags tfdiags.Diagnostics) {
 const testContextRefreshModuleStr = `
 aws_instance.web: (tainted)
   ID = bar
-  provider = provider["registry.terraform.io/hashicorp/aws"]
+  provider = provider["registry.opentofu.org/hashicorp/aws"]
 
 module.child:
   aws_instance.web:
     ID = new
-    provider = provider["registry.terraform.io/hashicorp/aws"]
+    provider = provider["registry.opentofu.org/hashicorp/aws"]
 `
 
 const testContextRefreshOutputStr = `
 aws_instance.web:
   ID = foo
-  provider = provider["registry.terraform.io/hashicorp/aws"]
+  provider = provider["registry.opentofu.org/hashicorp/aws"]
   foo = bar
 
 Outputs:
@@ -1037,5 +1037,5 @@ const testContextRefreshOutputPartialStr = `
 const testContextRefreshTaintedStr = `
 aws_instance.web: (tainted)
   ID = foo
-  provider = provider["registry.terraform.io/hashicorp/aws"]
+  provider = provider["registry.opentofu.org/hashicorp/aws"]
 `

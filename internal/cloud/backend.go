@@ -28,6 +28,7 @@ import (
 	"github.com/opentofu/opentofu/internal/backend"
 	"github.com/opentofu/opentofu/internal/command/jsonformat"
 	"github.com/opentofu/opentofu/internal/configs/configschema"
+	"github.com/opentofu/opentofu/internal/httpclient"
 	"github.com/opentofu/opentofu/internal/plans"
 	"github.com/opentofu/opentofu/internal/states/statemgr"
 	"github.com/opentofu/opentofu/internal/tfdiags"
@@ -46,7 +47,7 @@ const (
 )
 
 // Cloud is an implementation of EnhancedBackend in service of the cloud backend
-// integration for Terraform CLI. This backend is not intended to be surfaced at the user level and
+// integration for OpenTofu CLI. This backend is not intended to be surfaced at the user level and
 // is instead an implementation detail of cloud.Cloud.
 type Cloud struct {
 	// CLI and Colorize control the CLI output. If CLI is nil then no CLI
@@ -55,7 +56,7 @@ type Cloud struct {
 	CLIColor *colorstring.Colorize
 
 	// ContextOpts are the base context options to set when initializing a
-	// new Terraform context. Many of these will be overridden or merged by
+	// new OpenTofu context. Many of these will be overridden or merged by
 	// Operation. See Operation for more details.
 	ContextOpts *tofu.ContextOpts
 
@@ -94,7 +95,7 @@ type Cloud struct {
 	opLock sync.Mutex
 
 	// ignoreVersionConflict, if true, will disable the requirement that the
-	// local Terraform version matches the remote workspace's configured
+	// local OpenTofu version matches the remote workspace's configured
 	// version. This will also cause VerifyWorkspaceTerraformVersion to return
 	// a warning diagnostic instead of an error.
 	ignoreVersionConflict bool
@@ -181,20 +182,11 @@ func (b *Cloud) PrepareConfig(obj cty.Value) (cty.Value, tfdiags.Diagnostics) {
 		}
 	}
 
-	WorkspaceMapping := WorkspaceMapping{}
-	// Initially set the workspace name via env var
-	WorkspaceMapping.Name = os.Getenv("TF_WORKSPACE")
+	// Consider preserving the state in the receiver because it's instantiated twice, see b.setConfigurationFields
+	WorkspaceMapping := newWorkspacesMappingFromFields(obj)
 
-	if workspaces := obj.GetAttr("workspaces"); !workspaces.IsNull() {
-		if val := workspaces.GetAttr("name"); !val.IsNull() {
-			WorkspaceMapping.Name = val.AsString()
-		}
-		if val := workspaces.GetAttr("tags"); !val.IsNull() {
-			err := gocty.FromCtyValue(val, &WorkspaceMapping.Tags)
-			if err != nil {
-				log.Panicf("An unexpected error occurred: %s", err)
-			}
-		}
+	if diag := reconcileWorkspaceMappingEnvVars(&WorkspaceMapping); diag != nil {
+		diags = diags.Append(diag)
 	}
 
 	switch WorkspaceMapping.Strategy() {
@@ -207,6 +199,35 @@ func (b *Cloud) PrepareConfig(obj cty.Value) (cty.Value, tfdiags.Diagnostics) {
 	}
 
 	return obj, diags
+}
+
+func newWorkspacesMappingFromFields(obj cty.Value) WorkspaceMapping {
+	mapping := WorkspaceMapping{}
+
+	config := obj.GetAttr("workspaces")
+	if config.IsNull() {
+		return mapping
+	}
+
+	workspaceName := config.GetAttr("name")
+	if !workspaceName.IsNull() {
+		mapping.Name = workspaceName.AsString()
+	}
+
+	workspaceTags := config.GetAttr("tags")
+	if !workspaceTags.IsNull() {
+		err := gocty.FromCtyValue(workspaceTags, &mapping.Tags)
+		if err != nil {
+			log.Panicf("An unexpected error occurred: %s", err)
+		}
+	}
+
+	projectName := config.GetAttr("project")
+	if !projectName.IsNull() && projectName.AsString() != "" {
+		mapping.Project = projectName.AsString()
+	}
+
+	return mapping
 }
 
 func (b *Cloud) ServiceDiscoveryAliases() ([]backend.HostAlias, error) {
@@ -307,6 +328,9 @@ func (b *Cloud) Configure(obj cty.Value) tfdiags.Diagnostics {
 		cfg.Headers.Set(tfversion.Header, tfversion.Version)
 		cfg.Headers.Set(headerSourceKey, headerSourceValue)
 
+		// Update user-agent from 'go-tfe' to opentofu
+		cfg.Headers.Set("User-Agent", httpclient.OpenTofuUserAgent(tfversion.String()))
+
 		// Create the TFC/E API client.
 		b.client, err = tfe.NewClient(cfg)
 		if err != nil {
@@ -315,7 +339,7 @@ func (b *Cloud) Configure(obj cty.Value) tfdiags.Diagnostics {
 				"Failed to create the cloud backend client",
 				fmt.Sprintf(
 					`Encountered an unexpected error while creating the `+
-						`Terraform cloud backend client: %s.`, err,
+						`cloud backend client: %s.`, err,
 				),
 			))
 			return diags
@@ -362,7 +386,7 @@ func (b *Cloud) Configure(obj cty.Value) tfdiags.Diagnostics {
 	if parseErr != nil || currentAPIVersion.LessThan(desiredAPIVersion) {
 		log.Printf("[TRACE] API version check failed; want: >= %s, got: %s", desiredAPIVersion.Original(), currentAPIVersion)
 		if b.runningInAutomation {
-			// It should never be possible for this Terraform process to be mistakenly
+			// It should never be possible for this OpenTofu process to be mistakenly
 			// used internally within an unsupported Terraform Enterprise install - but
 			// just in case it happens, give an actionable error.
 			diags = diags.Append(
@@ -420,40 +444,44 @@ func (b *Cloud) setConfigurationFields(obj cty.Value) tfdiags.Diagnostics {
 		b.organization = val.AsString()
 	}
 
-	// Initially set the project via env var
-	b.WorkspaceMapping.Project = os.Getenv("TF_CLOUD_PROJECT")
+	// Initially, set workspaces from the configuration
+	b.WorkspaceMapping = newWorkspacesMappingFromFields(obj)
 
-	// Initially set the workspace name via env var
-	b.WorkspaceMapping.Name = os.Getenv("TF_WORKSPACE")
-
-	// Get the workspaces configuration block and retrieve the
-	// default workspace name.
-	if workspaces := obj.GetAttr("workspaces"); !workspaces.IsNull() {
-
-		// Check if the project is present and valid in the config.
-		if val := workspaces.GetAttr("project"); !val.IsNull() && val.AsString() != "" {
-			b.WorkspaceMapping.Project = val.AsString()
-		}
-
-		// PrepareConfig checks that you cannot set both of these.
-		if val := workspaces.GetAttr("name"); !val.IsNull() {
-			b.WorkspaceMapping.Name = val.AsString()
-		}
-		if val := workspaces.GetAttr("tags"); !val.IsNull() {
-			var tags []string
-			err := gocty.FromCtyValue(val, &tags)
-			if err != nil {
-				log.Panicf("An unexpected error occurred: %s", err)
-			}
-
-			b.WorkspaceMapping.Tags = tags
-		}
+	// Overwrite workspaces config from env variable
+	if diag := reconcileWorkspaceMappingEnvVars(&b.WorkspaceMapping); diag != nil {
+		return diags.Append(diag)
 	}
 
 	// Determine if we are forced to use the local backend.
 	b.forceLocal = os.Getenv("TF_FORCE_LOCAL_BACKEND") != ""
 
 	return diags
+}
+
+func reconcileWorkspaceMappingEnvVars(w *WorkspaceMapping) tfdiags.Diagnostic {
+	// See: https://github.com/opentofu/opentofu/issues/814
+	if v := os.Getenv("TF_WORKSPACE"); v != "" && w.Name == "" {
+		if len(w.Tags) > 0 && !workspaceInTags(w.Tags, v) {
+			return invalidWorkspaceConfigMisconfigurationEnvVar
+		}
+		w.Name = v
+		w.Tags = nil
+	}
+
+	if v := os.Getenv("TF_CLOUD_PROJECT"); v != "" && w.Project == "" {
+		w.Project = v
+	}
+
+	return nil
+}
+
+func workspaceInTags(tags []string, workspace string) bool {
+	for _, tag := range tags {
+		if tag == workspace {
+			return true
+		}
+	}
+	return false
 }
 
 // discover the TFC/E API service URL and version constraints.
@@ -699,7 +727,7 @@ func (b *Cloud) StateMgr(name string) (statemgr.Full, error) {
 
 		remoteTFVersion = workspace.TerraformVersion
 
-		// Attempt to set the new workspace to use this version of Terraform. This
+		// Attempt to set the new workspace to use this version of OpenTofu. This
 		// can fail if there's no enabled tool_version whose name matches our
 		// version string, but that's expected sometimes -- just warn and continue.
 		versionOptions := tfe.WorkspaceUpdateOptions{
@@ -914,8 +942,8 @@ func (b *Cloud) cancel(cancelCtx context.Context, op *backend.Operation, r *tfe.
 }
 
 // IgnoreVersionConflict allows commands to disable the fall-back check that
-// the local Terraform version matches the remote workspace's configured
-// Terraform version. This should be called by commands where this check is
+// the local OpenTofu version matches the remote workspace's configured
+// OpenTofu version. This should be called by commands where this check is
 // unnecessary, such as those performing remote operations, or read-only
 // operations. It will also be called if the user uses a command-line flag to
 // override this check.
@@ -923,8 +951,8 @@ func (b *Cloud) IgnoreVersionConflict() {
 	b.ignoreVersionConflict = true
 }
 
-// VerifyWorkspaceTerraformVersion compares the local Terraform version against
-// the workspace's configured Terraform version. If they are compatible, this
+// VerifyWorkspaceTerraformVersion compares the local OpenTofu version against
+// the workspace's configured OpenTofu version. If they are compatible, this
 // means that there are no state compatibility concerns, so it returns no
 // diagnostics.
 //
@@ -951,13 +979,13 @@ func (b *Cloud) VerifyWorkspaceTerraformVersion(workspaceName string) tfdiags.Di
 	}
 
 	// If the workspace has the pseudo-version "latest", all bets are off. We
-	// cannot reasonably determine what the intended Terraform version is, so
+	// cannot reasonably determine what the intended OpenTofu version is, so
 	// we'll skip version verification.
 	if workspace.TerraformVersion == "latest" {
 		return nil
 	}
 
-	// If the workspace has execution-mode set to local, the remote Terraform
+	// If the workspace has execution-mode set to local, the remote OpenTofu
 	// version is effectively meaningless, so we'll skip version verification.
 	if isLocalExecutionMode(workspace.ExecutionMode) {
 		return nil
@@ -1113,14 +1141,14 @@ func (b *Cloud) fetchWorkspace(ctx context.Context, organization string, workspa
 		case tfe.ErrResourceNotFound:
 			return nil, fmt.Errorf(
 				"workspace %s not found\n\n"+
-					"For security, Terraform Cloud returns '404 Not Found' responses for resources\n"+
+					"For security, cloud backends return '404 Not Found' responses for resources\n"+
 					"for resources that a user doesn't have access to, in addition to resources that\n"+
 					"do not exist. If the resource does exist, please check the permissions of the provided token.",
 				workspace,
 			)
 		default:
 			err := fmt.Errorf(
-				"Terraform Cloud returned an unexpected error:\n\n%w",
+				"Cloud backend returned an unexpected error:\n\n%w",
 				err,
 			)
 			return nil, err
@@ -1140,7 +1168,7 @@ func (b *Cloud) validWorkspaceEnvVar(ctx context.Context, organization, workspac
 	if err != nil && err != tfe.ErrResourceNotFound {
 		return tfdiags.Sourceless(
 			tfdiags.Error,
-			"Terraform Cloud returned an unexpected error",
+			"Cloud backend returned an unexpected error",
 			err.Error(),
 		)
 	}
@@ -1164,7 +1192,7 @@ func (b *Cloud) validWorkspaceEnvVar(ctx context.Context, organization, workspac
 			if err != nil {
 				return tfdiags.Sourceless(
 					tfdiags.Error,
-					"Terraform Cloud returned an unexpected error",
+					"Cloud backend returned an unexpected error",
 					err.Error(),
 				)
 			}
@@ -1225,7 +1253,7 @@ func generalError(msg string, err error) error {
 		diags = diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
 			fmt.Sprintf("%s: %v", msg, err),
-			"For security, Terraform Cloud returns '404 Not Found' responses for resources\n"+
+			"For security, cloud backends returns '404 Not Found' responses for resources\n"+
 				"for resources that a user doesn't have access to, in addition to resources that\n"+
 				"do not exist. If the resource does exist, please check the permissions of the provided token.",
 		))
@@ -1234,7 +1262,7 @@ func generalError(msg string, err error) error {
 		diags = diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
 			fmt.Sprintf("%s: %v", msg, err),
-			`Terraform Cloud returned an unexpected error. Sometimes `+
+			`Cloud backend returned an unexpected error. Sometimes `+
 				`this is caused by network connection problems, in which case you could retry `+
 				`the command. If the issue persists please open a support ticket to get help `+
 				`resolving the problem.`,
@@ -1245,7 +1273,7 @@ func generalError(msg string, err error) error {
 
 // The newline in this error is to make it look good in the CLI!
 const initialRetryError = `
-[reset][yellow]There was an error connecting to Terraform Cloud. Please do not exit
+[reset][yellow]There was an error connecting to the cloud backend. Please do not exit
 OpenTofu to prevent data loss! Trying to restore the connection...
 [reset]
 `
@@ -1265,7 +1293,7 @@ const operationNotCanceled = `
 const refreshToApplyRefresh = `[bold][yellow]Proceeding with 'tofu apply -refresh-only -auto-approve'.[reset]`
 
 const unavailableTerraformVersion = `
-[reset][yellow]The local OpenTofu version (%s) is not available in Terraform Cloud, or your
+[reset][yellow]The local OpenTofu version (%s) is not available in the cloud backend, or your
 organization does not have access to it. The new workspace will use %s. You can
 change this later in the workspace settings.[reset]`
 
@@ -1278,7 +1306,7 @@ Please reach out to OpenTofu Support to resolve this issue.`
 var (
 	workspaceConfigurationHelp = fmt.Sprintf(
 		`The 'workspaces' block configures how OpenTofu CLI maps its workspaces for this single
-configuration to workspaces within a Terraform Cloud organization. Two strategies are available:
+configuration to workspaces within a cloud backend organization. Two strategies are available:
 
 [bold]tags[reset] - %s
 
@@ -1292,11 +1320,11 @@ configuration to workspaces within a Terraform Cloud organization. Two strategie
 be set, and 'tofu login' used instead; your credentials will then be fetched from your CLI
 configuration file or configured credential helper.`
 
-	schemaDescriptionTags = `A set of tags used to select remote Terraform Cloud workspaces to be used for this single
+	schemaDescriptionTags = `A set of tags used to select remote cloud backend workspaces to be used for this single
 configuration. New workspaces will automatically be tagged with these tag values. Generally, this
 is the primary and recommended strategy to use. This option conflicts with "name".`
 
-	schemaDescriptionName = `The name of a single Terraform Cloud workspace to be used with this configuration.
+	schemaDescriptionName = `The name of a single cloud backend workspace to be used with this configuration.
 When configured, only the specified workspace can be used. This option conflicts with "tags".`
 
 	schemaDescriptionProject = `The name of a project that resulting workspace(s) will be created in.`

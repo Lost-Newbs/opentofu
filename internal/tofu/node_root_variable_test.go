@@ -33,6 +33,14 @@ func TestNodeRootVariableExecute(t *testing.T) {
 			},
 		}
 
+		ctx.ChecksState = checks.NewState(&configs.Config{
+			Module: &configs.Module{
+				Variables: map[string]*configs.Variable{
+					"foo": n.Config,
+				},
+			},
+		})
+
 		diags := n.Execute(ctx, walkApply)
 		if diags.HasErrors() {
 			t.Fatalf("unexpected error: %s", diags.Err())
@@ -54,7 +62,7 @@ func TestNodeRootVariableExecute(t *testing.T) {
 	t.Run("validation", func(t *testing.T) {
 		ctx := new(MockEvalContext)
 
-		// The variable validation function gets called with Terraform's
+		// The variable validation function gets called with OpenTofu's
 		// built-in functions available, so we need a minimal scope just for
 		// it to get the functions from.
 		ctx.EvaluationScopeScope = &lang.Scope{}
@@ -116,7 +124,6 @@ func TestNodeRootVariableExecute(t *testing.T) {
 				Value:      cty.StringVal("5"),
 				SourceType: ValueFromUnknown,
 			},
-			Planning: true,
 		}
 
 		ctx.ChecksState = checks.NewState(&configs.Config{

@@ -15,7 +15,7 @@ import (
 // for evaluating in-memory values (input variables, local values, output
 // values) in the state without any other side-effects.
 //
-// This graph is used only in weird cases, such as the "terraform console"
+// This graph is used only in weird cases, such as the "tofu console"
 // CLI command, where we need to evaluate expressions against the state
 // without taking any other actions.
 //
@@ -67,8 +67,8 @@ func (b *EvalGraphBuilder) Steps() []GraphTransformer {
 		},
 
 		// Add dynamic values
-		&RootVariableTransformer{Config: b.Config, RawValues: b.RootVariableValues, Planning: true},
-		&ModuleVariableTransformer{Config: b.Config, Planning: true},
+		&RootVariableTransformer{Config: b.Config, RawValues: b.RootVariableValues},
+		&ModuleVariableTransformer{Config: b.Config},
 		&LocalTransformer{Config: b.Config},
 		&OutputTransformer{
 			Config:   b.Config,

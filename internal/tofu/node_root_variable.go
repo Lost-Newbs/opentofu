@@ -19,16 +19,12 @@ type NodeRootVariable struct {
 	Addr   addrs.InputVariable
 	Config *configs.Variable
 
-	// RawValue is the value for the variable set from outside Terraform
+	// RawValue is the value for the variable set from outside OpenTofu
 	// Core, such as on the command line, or from an environment variable,
 	// or similar. This is the raw value that was provided, not yet
 	// converted or validated, and can be nil for a variable that isn't
 	// set at all.
 	RawValue *InputValue
-
-	// Planning must be set to true when building a planning graph, and must be
-	// false when building an apply graph.
-	Planning bool
 }
 
 var (
@@ -87,12 +83,10 @@ func (n *NodeRootVariable) Execute(ctx EvalContext, op walkOperation) tfdiags.Di
 		}
 	}
 
-	if n.Planning {
-		if checkState := ctx.Checks(); checkState.ConfigHasChecks(n.Addr.InModule(addrs.RootModule)) {
-			ctx.Checks().ReportCheckableObjects(
-				n.Addr.InModule(addrs.RootModule),
-				addrs.MakeSet[addrs.Checkable](n.Addr.Absolute(addrs.RootModuleInstance)))
-		}
+	if checkState := ctx.Checks(); checkState.ConfigHasChecks(n.Addr.InModule(addrs.RootModule)) {
+		ctx.Checks().ReportCheckableObjects(
+			n.Addr.InModule(addrs.RootModule),
+			addrs.MakeSet[addrs.Checkable](n.Addr.Absolute(addrs.RootModuleInstance)))
 	}
 
 	finalVal, moreDiags := prepareFinalInputVariableValue(

@@ -81,7 +81,7 @@ type PlanGraphBuilder struct {
 	// ImportTargets are the list of resources to import.
 	ImportTargets []*ImportTarget
 
-	// GenerateConfig tells Terraform where to write and generated config for
+	// GenerateConfig tells OpenTofu where to write and generated config for
 	// any import targets that do not already have configuration.
 	//
 	// If empty, then config will not be generated.
@@ -128,8 +128,8 @@ func (b *PlanGraphBuilder) Steps() []GraphTransformer {
 		},
 
 		// Add dynamic values
-		&RootVariableTransformer{Config: b.Config, RawValues: b.RootVariableValues, Planning: true},
-		&ModuleVariableTransformer{Config: b.Config, Planning: true},
+		&RootVariableTransformer{Config: b.Config, RawValues: b.RootVariableValues},
+		&ModuleVariableTransformer{Config: b.Config},
 		&LocalTransformer{Config: b.Config},
 		&OutputTransformer{
 			Config:      b.Config,

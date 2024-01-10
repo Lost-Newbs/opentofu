@@ -25,16 +25,6 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
-// Modified from github.com/terraform-providers/terraform-provider-kubernetes
-
-const (
-	noConfigError = `
-
-[Kubernetes backend] Neither service_account nor load_config_file were set to true, 
-this could cause issues connecting to your Kubernetes cluster.
-`
-)
-
 var (
 	secretResource = k8sSchema.GroupVersionResource{
 		Group:    "",
@@ -201,7 +191,7 @@ type Backend struct {
 	nameSuffix             string
 }
 
-func (b Backend) KubernetesSecretClient() (dynamic.ResourceInterface, error) {
+func (b Backend) getKubernetesSecretClient() (dynamic.ResourceInterface, error) {
 	if b.kubernetesSecretClient != nil {
 		return b.kubernetesSecretClient, nil
 	}
@@ -215,7 +205,7 @@ func (b Backend) KubernetesSecretClient() (dynamic.ResourceInterface, error) {
 	return b.kubernetesSecretClient, nil
 }
 
-func (b Backend) KubernetesLeaseClient() (coordinationv1.LeaseInterface, error) {
+func (b Backend) getKubernetesLeaseClient() (coordinationv1.LeaseInterface, error) {
 	if b.kubernetesLeaseClient != nil {
 		return b.kubernetesLeaseClient, nil
 	}
@@ -398,7 +388,7 @@ func tryLoadingConfigFile(d *schema.ResourceData) (*restclient.Config, error) {
 func expandStringSlice(s []interface{}) []string {
 	result := make([]string, len(s), len(s))
 	for k, v := range s {
-		// Handle the Terraform parser bug which turns empty strings in lists to nil.
+		// Handle the OpenTofu parser bug which turns empty strings in lists to nil.
 		if v == nil {
 			result[k] = ""
 		} else {

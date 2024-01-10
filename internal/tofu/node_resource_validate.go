@@ -56,14 +56,23 @@ func (n *NodeValidatableResource) Execute(ctx EvalContext, op walkOperation) (di
 	if managed := n.Config.Managed; managed != nil {
 		// Validate all the provisioners
 		for _, p := range managed.Provisioners {
+			// Create a local shallow copy of the provisioner
+			provisioner := *p
+
 			if p.Connection == nil {
-				p.Connection = n.Config.Managed.Connection
+				provisioner.Connection = n.Config.Managed.Connection
 			} else if n.Config.Managed.Connection != nil {
-				p.Connection.Config = configs.MergeBodies(n.Config.Managed.Connection.Config, p.Connection.Config)
+				// Merge the connection with n.Config.Managed.Connection, but only in
+				// our local provisioner, as it will only be used by
+				// "validateProvisioner"
+				connection := &configs.Connection{}
+				*connection = *p.Connection
+				connection.Config = configs.MergeBodies(n.Config.Managed.Connection.Config, connection.Config)
+				provisioner.Connection = connection
 			}
 
 			// Validate Provisioner Config
-			diags = diags.Append(n.validateProvisioner(ctx, p))
+			diags = diags.Append(n.validateProvisioner(ctx, &provisioner))
 			if diags.HasErrors() {
 				return diags
 			}
@@ -316,7 +325,7 @@ func (n *NodeValidatableResource) validateResource(ctx EvalContext) tfdiags.Diag
 	// that provider's resources in the module depend on the node. That's
 	// an awful heavy hammer to swing for this feature, which should be
 	// used only in limited cases with heavy coordination with the
-	// Terraform team, so we're going to defer that solution for a future
+	// OpenTofu team, so we're going to defer that solution for a future
 	// enhancement to this functionality.
 	/*
 		if n.ProviderMetas != nil {

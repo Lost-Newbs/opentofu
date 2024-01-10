@@ -61,7 +61,9 @@ Options:
 
   -no-color             If specified, output won't contain any color.
 
-  -test-directory=path	Set the OpenTofu test directory, defaults to "tests".    
+  -test-directory=path  Set the OpenTofu test directory, defaults to "tests". When set, the
+                        test command will search for test files in the current directory and
+                        in the one specified by the flag.
 
   -var 'foo=bar'        Set a value for one of the input variables in the root
                         module of the configuration. Use this option more than
@@ -323,7 +325,7 @@ type TestSuiteRunner struct {
 	Stopped   bool
 	Cancelled bool
 
-	// StoppedCtx and CancelledCtx allow in progress Terraform operations to
+	// StoppedCtx and CancelledCtx allow in progress OpenTofu operations to
 	// respond to external calls from the test command.
 	StoppedCtx   context.Context
 	CancelledCtx context.Context
@@ -901,42 +903,8 @@ func (runner *TestFileRunner) Cleanup(file *moduletest.File) {
 		return
 	}
 
-	// First, we'll clean up the main state.
-	main := runner.States[MainStateIdentifier]
-
-	var diags tfdiags.Diagnostics
-	updated := main.State
-	if main.Run == nil {
-		if !main.State.Empty() {
-			log.Printf("[ERROR] TestFileRunner: found inconsistent run block and state file in %s", file.Name)
-			diags = diags.Append(tfdiags.Sourceless(tfdiags.Error, "Inconsistent state", fmt.Sprintf("Found inconsistent state while cleaning up %s. This is a bug in OpenTofu - please report it", file.Name)))
-		}
-	} else {
-		reset, configDiags := runner.Suite.Config.TransformForTest(main.Run.Config, file.Config)
-		diags = diags.Append(configDiags)
-
-		if !configDiags.HasErrors() {
-			var destroyDiags tfdiags.Diagnostics
-			updated, destroyDiags = runner.destroy(runner.Suite.Config, main.State, main.Run, file)
-			diags = diags.Append(destroyDiags)
-		}
-
-		reset()
-	}
-	runner.Suite.View.DestroySummary(diags, main.Run, file, updated)
-
-	if runner.Suite.Cancelled {
-		// In case things were cancelled during the last execution.
-		return
-	}
-
 	var states []*TestFileState
 	for key, state := range runner.States {
-		if key == MainStateIdentifier {
-			// We processed the main state above.
-			continue
-		}
-
 		if state.Run == nil {
 			if state.State.Empty() {
 				// We can see a run block being empty when the state is empty if
@@ -945,7 +913,12 @@ func (runner *TestFileRunner) Cleanup(file *moduletest.File) {
 				// skip it.
 				continue
 			}
-			log.Printf("[ERROR] TestFileRunner: found inconsistent run block and state file in %s for module %s", file.Name, key)
+
+			if key == MainStateIdentifier {
+				log.Printf("[ERROR] TestFileRunner: found inconsistent run block and state file in %s", file.Name)
+			} else {
+				log.Printf("[ERROR] TestFileRunner: found inconsistent run block and state file in %s for module %s", file.Name, key)
+			}
 
 			// Otherwise something bad has happened, and we have no way to
 			// recover from it. This shouldn't happen in reality, but we'll
@@ -960,14 +933,13 @@ func (runner *TestFileRunner) Cleanup(file *moduletest.File) {
 		states = append(states, state)
 	}
 
-	slices.SortFunc(states, func(a, b *TestFileState) bool {
+	slices.SortFunc(states, func(a, b *TestFileState) int {
 		// We want to clean up later run blocks first. So, we'll sort this in
 		// reverse according to index. This means larger indices first.
-		return a.Run.Index > b.Run.Index
+		return b.Run.Index - a.Run.Index
 	})
 
-	// Then we'll clean up the additional states for custom modules in reverse
-	// order.
+	// Clean up all the states (for main and custom modules) in reverse order.
 	for _, state := range states {
 		log.Printf("[DEBUG] TestStateManager: cleaning up state for %s/%s", file.Name, state.Run.Name)
 
@@ -979,14 +951,22 @@ func (runner *TestFileRunner) Cleanup(file *moduletest.File) {
 		}
 
 		var diags tfdiags.Diagnostics
+		var runConfig *configs.Config
 
-		reset, configDiags := state.Run.Config.ConfigUnderTest.TransformForTest(state.Run.Config, file.Config)
+		isMainState := state.Run.Config.Module == nil
+		if isMainState {
+			runConfig = runner.Suite.Config
+		} else {
+			runConfig = state.Run.Config.ConfigUnderTest
+		}
+
+		reset, configDiags := runConfig.TransformForTest(state.Run.Config, file.Config)
 		diags = diags.Append(configDiags)
 
 		updated := state.State
 		if !diags.HasErrors() {
 			var destroyDiags tfdiags.Diagnostics
-			updated, destroyDiags = runner.destroy(state.Run.Config.ConfigUnderTest, state.State, state.Run, file)
+			updated, destroyDiags = runner.destroy(runConfig, state.State, state.Run, file)
 			diags = diags.Append(destroyDiags)
 		}
 		runner.Suite.View.DestroySummary(diags, state.Run, file, updated)
@@ -1092,7 +1072,7 @@ func prepareInputVariablesForAssertions(config *configs.Config, run *moduletest.
 	}
 
 	// We've gathered all the values we have, let's convert them into
-	// terraform.InputValues so they can be passed into the Terraform graph.
+	// tofu.InputValues so they can be passed into the OpenTofu graph.
 
 	inputs := make(tofu.InputValues, len(variables))
 	var diags tfdiags.Diagnostics
@@ -1103,7 +1083,7 @@ func prepareInputVariablesForAssertions(config *configs.Config, run *moduletest.
 	}
 
 	// Next, we're going to apply any default values from the configuration.
-	// We do this after the conversion into terraform.InputValues, as the
+	// We do this after the conversion into tofu.InputValues, as the
 	// defaults have already been converted into cty.Value objects.
 
 	for name, variable := range config.Module.Variables {

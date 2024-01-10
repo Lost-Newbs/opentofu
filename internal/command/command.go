@@ -23,8 +23,8 @@ const PluginPathFile = "plugin_path"
 const pluginMachineName = runtime.GOOS + "_" + runtime.GOARCH
 
 // DefaultPluginVendorDir is the location in the config directory to look for
-// user-added plugin binaries. Terraform only reads from this path if it
-// exists, it is never created by terraform.
+// user-added plugin binaries. OpenTofu only reads from this path if it
+// exists, it is never created by tofu.
 const DefaultPluginVendorDir = "terraform.d/plugins/" + pluginMachineName
 
 // DefaultStateFilename is the default filename used for the state file.
@@ -50,7 +50,7 @@ is configured to use a non-local backend. This backend doesn't support this
 operation.
 `
 
-// ModulePath returns the path to the root module and validates CLI arguments.
+// modulePath returns the path to the root module and validates CLI arguments.
 //
 // This centralizes the logic for any commands that previously accepted
 // a module path via CLI arguments. This will error if any extraneous arguments
@@ -58,7 +58,7 @@ operation.
 //
 // If your command accepts more than one arg, then change the slice bounds
 // to pass validation.
-func ModulePath(args []string) (string, error) {
+func modulePath(args []string) (string, error) {
 	// TODO: test
 
 	if len(args) > 0 {

@@ -53,6 +53,10 @@ var DescriptionList = map[string]descriptionEntry{
 		Description:      "`base64gzip` compresses a string with gzip and then encodes the result in Base64 encoding.",
 		ParamDescription: []string{""},
 	},
+	"base64gunzip": {
+		Description:      "`base64gunzip` decodes a Base64-encoded string and uncompresses the result with gzip.",
+		ParamDescription: []string{""},
+	},
 	"base64sha256": {
 		Description:      "`base64sha256` computes the SHA256 hash of a given string and encodes it with Base64. This is not equivalent to `base64encode(sha256(\"test\"))` since `sha256()` returns hexadecimal representation.",
 		ParamDescription: []string{""},
@@ -341,7 +345,7 @@ var DescriptionList = map[string]descriptionEntry{
 		ParamDescription: []string{"", ""},
 	},
 	"sensitive": {
-		Description:      "`sensitive` takes any value and returns a copy of it marked so that Terraform will treat it as sensitive, with the same meaning and behavior as for [sensitive input variables](/language/values/variables#suppressing-values-in-cli-output).",
+		Description:      "`sensitive` takes any value and returns a copy of it marked so that OpenTofu will treat it as sensitive, with the same meaning and behavior as for [sensitive input variables](/language/values/variables#suppressing-values-in-cli-output).",
 		ParamDescription: []string{""},
 	},
 	"setintersection": {

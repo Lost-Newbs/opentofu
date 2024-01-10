@@ -12,7 +12,7 @@ import (
 	"github.com/opentofu/opentofu/internal/configs"
 )
 
-// LoadConfig reads the Terraform module in the given directory and uses it as the
+// LoadConfig reads the OpenTofu module in the given directory and uses it as the
 // root module to build the static module tree that represents a configuration,
 // assuming that all required descendent modules have already been installed.
 //
@@ -55,7 +55,7 @@ func (l *Loader) moduleWalkerLoad(req *configs.ModuleRequest) (*configs.Module, 
 	// Since we're just loading here, we expect that all referenced modules
 	// will be already installed and described in our manifest. However, we
 	// do verify that the manifest and the configuration are in agreement
-	// so that we can prompt the user to run "terraform init" if not.
+	// so that we can prompt the user to run "tofu init" if not.
 
 	key := l.modules.manifest.ModuleKey(req.Path)
 	record, exists := l.modules.manifest[key]

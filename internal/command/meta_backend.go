@@ -73,8 +73,8 @@ type BackendWithRemoteTerraformVersion interface {
 
 // Backend initializes and returns the backend for this CLI session.
 //
-// The backend is used to perform the actual Terraform operations. This
-// abstraction enables easily sliding in new Terraform behavior such as
+// The backend is used to perform the actual OpenTofu operations. This
+// abstraction enables easily sliding in new OpenTofu behavior such as
 // remote state storage, remote operations, etc. while allowing the CLI
 // to remain mostly identical.
 //
@@ -88,7 +88,7 @@ type BackendWithRemoteTerraformVersion interface {
 //
 // A side-effect of this method is the population of m.backendState, recording
 // the final resolved backend configuration after dealing with overrides from
-// the "terraform init" command line, etc.
+// the "tofu init" command line, etc.
 func (m *Meta) Backend(opts *BackendOpts) (backend.Enhanced, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 
@@ -130,7 +130,7 @@ func (m *Meta) Backend(opts *BackendOpts) (backend.Enhanced, tfdiags.Diagnostics
 				}
 				suggestion := "To download the plugins required for this configuration, run:\n  tofu init"
 				if m.RunningInAutomation {
-					// Don't mention "terraform init" specifically if we're running in an automation wrapper
+					// Don't mention "tofu init" specifically if we're running in an automation wrapper
 					suggestion = "You must install the required plugins before running OpenTofu operations."
 				}
 				diags = diags.Append(tfdiags.Sourceless(
@@ -534,7 +534,7 @@ func (m *Meta) backendFromConfig(opts *BackendOpts) (backend.Backend, tfdiags.Di
 	// ------------------------------------------------------------------------
 	// For historical reasons, current backend configuration for a working
 	// directory is kept in a *state-like* file, using the legacy state
-	// structures in the Terraform package. It is not actually a Terraform
+	// structures in the OpenTofu package. It is not actually a OpenTofu
 	// state, and so only the "backend" portion of it is actually used.
 	//
 	// The remainder of this code often confusingly refers to this as a "state",
@@ -545,7 +545,7 @@ func (m *Meta) backendFromConfig(opts *BackendOpts) (backend.Backend, tfdiags.Di
 	// Since the "real" state has since moved on to be represented by
 	// states.State, we can recognize the special meaning of state that applies
 	// to this function and its callees by their continued use of the
-	// otherwise-obsolete terraform.State.
+	// otherwise-obsolete tofu.State.
 	// ------------------------------------------------------------------------
 
 	// Get the path to where we store a local cache of backend configuration
@@ -630,10 +630,10 @@ func (m *Meta) backendFromConfig(opts *BackendOpts) (backend.Backend, tfdiags.Di
 		log.Printf("[TRACE] Meta.Backend: moving from default local state only to %q backend", c.Type)
 		if !opts.Init {
 			if c.Type == "cloud" {
-				initReason := "Initial configuration of Terraform Cloud"
+				initReason := "Initial configuration of cloud backend"
 				diags = diags.Append(tfdiags.Sourceless(
 					tfdiags.Error,
-					"Terraform Cloud initialization required: please run \"tofu init\"",
+					"Cloud backend initialization required: please run \"tofu init\"",
 					fmt.Sprintf(strings.TrimSpace(errBackendInitCloud), initReason),
 				))
 			} else {
@@ -731,11 +731,11 @@ func (m *Meta) determineInitReason(previousBackendType string, currentBackendTyp
 	initReason := ""
 	switch cloudMode {
 	case cloud.ConfigMigrationIn:
-		initReason = fmt.Sprintf("Changed from backend %q to Terraform Cloud", previousBackendType)
+		initReason = fmt.Sprintf("Changed from backend %q to cloud backend", previousBackendType)
 	case cloud.ConfigMigrationOut:
-		initReason = fmt.Sprintf("Changed from Terraform Cloud to backend %q", previousBackendType)
+		initReason = fmt.Sprintf("Changed from cloud backend to backend %q", previousBackendType)
 	case cloud.ConfigChangeInPlace:
-		initReason = "Terraform Cloud configuration block has changed"
+		initReason = "Cloud backend configuration block has changed"
 	default:
 		switch {
 		case previousBackendType != currentBackendType:
@@ -750,13 +750,13 @@ func (m *Meta) determineInitReason(previousBackendType string, currentBackendTyp
 	case cloud.ConfigChangeInPlace:
 		diags = diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
-			"Terraform Cloud initialization required: please run \"tofu init\"",
+			"Cloud backend initialization required: please run \"tofu init\"",
 			fmt.Sprintf(strings.TrimSpace(errBackendInitCloud), initReason),
 		))
 	case cloud.ConfigMigrationIn:
 		diags = diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
-			"Terraform Cloud initialization required: please run \"tofu init\"",
+			"Cloud backend initialization required: please run \"tofu init\"",
 			fmt.Sprintf(strings.TrimSpace(errBackendInitCloud), initReason),
 		))
 	default:
@@ -772,7 +772,7 @@ func (m *Meta) determineInitReason(previousBackendType string, currentBackendTyp
 
 // backendFromState returns the initialized (not configured) backend directly
 // from the backend state. This should be used only when a user runs
-// `terraform init -backend=false`. This function returns a local backend if
+// `tofu init -backend=false`. This function returns a local backend if
 // there is no backend state or no backend configured.
 func (m *Meta) backendFromState(ctx context.Context) (backend.Backend, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
@@ -811,7 +811,7 @@ func (m *Meta) backendFromState(ctx context.Context) (backend.Backend, tfdiags.D
 
 	// The configuration saved in the working directory state file is used
 	// in this case, since it will contain any additional values that
-	// were provided via -backend-config arguments on terraform init.
+	// were provided via -backend-config arguments on tofu init.
 	schema := b.ConfigSchema()
 	configVal, err := s.Backend.Config(schema)
 	if err != nil {
@@ -892,7 +892,7 @@ func (m *Meta) backend_c_r_S(
 	backendType := s.Backend.Type
 
 	if cloudMode == cloud.ConfigMigrationOut {
-		m.Ui.Output("Migrating from Terraform Cloud to local state.")
+		m.Ui.Output("Migrating from cloud backend to local state.")
 	} else {
 		m.Ui.Output(fmt.Sprintf(strings.TrimSpace(outputBackendMigrateLocal), s.Backend.Type))
 	}
@@ -1138,11 +1138,11 @@ func (m *Meta) backend_C_r_S_changed(c *configs.Backend, cHash int, sMgr *clista
 		// Notify the user
 		switch cloudMode {
 		case cloud.ConfigChangeInPlace:
-			m.Ui.Output("Terraform Cloud configuration has changed.")
+			m.Ui.Output("Cloud backend configuration has changed.")
 		case cloud.ConfigMigrationIn:
-			m.Ui.Output(fmt.Sprintf("Migrating from backend %q to Terraform Cloud.", s.Backend.Type))
+			m.Ui.Output(fmt.Sprintf("Migrating from backend %q to cloud backend.", s.Backend.Type))
 		case cloud.ConfigMigrationOut:
-			m.Ui.Output(fmt.Sprintf("Migrating from Terraform Cloud to backend %q.", c.Type))
+			m.Ui.Output(fmt.Sprintf("Migrating from cloud backend to backend %q.", c.Type))
 		default:
 			if s.Backend.Type != c.Type {
 				output := fmt.Sprintf(outputBackendMigrateChange, s.Backend.Type, c.Type)
@@ -1268,7 +1268,7 @@ func (m *Meta) savedBackend(sMgr *clistate.LocalState) (backend.Backend, tfdiags
 
 	// The configuration saved in the working directory state file is used
 	// in this case, since it will contain any additional values that
-	// were provided via -backend-config arguments on terraform init.
+	// were provided via -backend-config arguments on tofu init.
 	schema := b.ConfigSchema()
 	configVal, err := s.Backend.Config(schema)
 	if err != nil {
@@ -1470,7 +1470,7 @@ func (m *Meta) ignoreRemoteVersionConflict(b backend.Backend) {
 	}
 }
 
-// Helper method to check the local Terraform version against the configured
+// Helper method to check the local OpenTofu version against the configured
 // version in the remote workspace, returning diagnostics if they conflict.
 func (m *Meta) remoteVersionCheck(b backend.Backend, workspace string) tfdiags.Diagnostics {
 	var diags tfdiags.Diagnostics
@@ -1500,26 +1500,26 @@ func (m *Meta) remoteVersionCheck(b backend.Backend, workspace string) tfdiags.D
 func (m *Meta) assertSupportedCloudInitOptions(mode cloud.ConfigChangeMode) tfdiags.Diagnostics {
 	var diags tfdiags.Diagnostics
 	if mode.InvolvesCloud() {
-		log.Printf("[TRACE] Meta.Backend: Terraform Cloud mode initialization type: %s", mode)
+		log.Printf("[TRACE] Meta.Backend: Cloud backend mode initialization type: %s", mode)
 		if m.reconfigure {
 			if mode.IsCloudMigration() {
 				diags = diags.Append(tfdiags.Sourceless(
 					tfdiags.Error,
 					"Invalid command-line option",
-					"The -reconfigure option is unsupported when migrating to Terraform Cloud, because activating Terraform Cloud involves some additional steps.",
+					"The -reconfigure option is unsupported when migrating to cloud backend, because activating cloud backend involves some additional steps.",
 				))
 			} else {
 				diags = diags.Append(tfdiags.Sourceless(
 					tfdiags.Error,
 					"Invalid command-line option",
-					"The -reconfigure option is for in-place reconfiguration of state backends only, and is not needed when changing Terraform Cloud settings.\n\nWhen using Terraform Cloud, initialization automatically activates any new Cloud configuration settings.",
+					"The -reconfigure option is for in-place reconfiguration of state backends only, and is not needed when changing cloud backend settings.\n\nWhen using cloud backend, initialization automatically activates any new Cloud configuration settings.",
 				))
 			}
 		}
 		if m.migrateState {
 			name := "-migrate-state"
 			if m.forceInitCopy {
-				// -force copy implies -migrate-state in "terraform init",
+				// -force copy implies -migrate-state in "tofu init",
 				// so m.migrateState is forced to true in this case even if
 				// the user didn't actually specify it. We'll use the other
 				// name here to avoid being confusing, then.
@@ -1529,13 +1529,13 @@ func (m *Meta) assertSupportedCloudInitOptions(mode cloud.ConfigChangeMode) tfdi
 				diags = diags.Append(tfdiags.Sourceless(
 					tfdiags.Error,
 					"Invalid command-line option",
-					fmt.Sprintf("The %s option is for migration between state backends only, and is not applicable when using Terraform Cloud.\n\nTerraform Cloud migration has additional steps, configured by interactive prompts.", name),
+					fmt.Sprintf("The %s option is for migration between state backends only, and is not applicable when using cloud backend.\n\nCloud backend migration has additional steps, configured by interactive prompts.", name),
 				))
 			} else {
 				diags = diags.Append(tfdiags.Sourceless(
 					tfdiags.Error,
 					"Invalid command-line option",
-					fmt.Sprintf("The %s option is for migration between state backends only, and is not applicable when using Terraform Cloud.\n\nState storage is handled automatically by Terraform Cloud and so the state storage location is not configurable.", name),
+					fmt.Sprintf("The %s option is for migration between state backends only, and is not applicable when using cloud backend.\n\nState storage is handled automatically by cloud backend and so the state storage location is not configurable.", name),
 				))
 			}
 		}
@@ -1629,7 +1629,7 @@ configuration or state have been made.
 const errBackendInitCloud = `
 Reason: %s.
 
-Changes to the Terraform Cloud configuration block require reinitialization, to discover any changes to the available workspaces.
+Changes to the cloud backend configuration block require reinitialization, to discover any changes to the available workspaces.
 
 To re-initialize, run:
   tofu init
@@ -1663,11 +1663,11 @@ has changed. OpenTofu will now check for existing state in the backends.
 
 const inputCloudInitCreateWorkspace = `
 There are no workspaces with the configured tags (%s)
-in your Terraform Cloud organization. To finish initializing, OpenTofu needs at
+in your cloud backend organization. To finish initializing, OpenTofu needs at
 least one workspace available.
 
 OpenTofu can create a properly tagged workspace for you now. Please enter a
-name to create a new Terraform Cloud workspace.
+name to create a new cloud backend workspace.
 `
 
 const successBackendUnset = `

@@ -12,14 +12,15 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	plugin "github.com/hashicorp/go-plugin"
+	ctyjson "github.com/zclconf/go-cty/cty/json"
+	"github.com/zclconf/go-cty/cty/msgpack"
+	"google.golang.org/grpc"
+
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/plugin/convert"
 	"github.com/opentofu/opentofu/internal/providers"
 	proto "github.com/opentofu/opentofu/internal/tfplugin5"
-	ctyjson "github.com/zclconf/go-cty/cty/json"
-	"github.com/zclconf/go-cty/cty/msgpack"
-	"google.golang.org/grpc"
 )
 
 var logger = logging.HCLogger()
@@ -44,7 +45,7 @@ func (p *GRPCProviderPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Serve
 
 // GRPCProvider handles the client, or core side of the plugin rpc connection.
 // The GRPCProvider methods are mostly a translation layer between the
-// terraform providers types and the grpc proto types, directly converting
+// tofu providers types and the grpc proto types, directly converting
 // between the two.
 type GRPCProvider struct {
 	// PluginClient provides a reference to the plugin.Client which controls the plugin process.
@@ -78,15 +79,21 @@ func (p *GRPCProvider) GetProviderSchema() (resp providers.GetProviderSchemaResp
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// check the global cache if we can
-	if !p.Addr.IsZero() && resp.ServerCapabilities.GetProviderSchemaOptional {
-		if resp, ok := providers.SchemaCache.Get(p.Addr); ok {
-			return resp
+	// First, we check the global cache.
+	// The cache could contain this schema if an instance of this provider has previously been started.
+	if !p.Addr.IsZero() {
+		// Even if the schema is cached, GetProviderSchemaOptional could be false. This would indicate that once instantiated,
+		// this provider requires the get schema call to be made at least once, as it handles part of the provider's setup.
+		// At this point, we don't know if this is the first call to a provider instance or not, so we don't use the result in that case.
+		if schemaCached, ok := providers.SchemaCache.Get(p.Addr); ok && schemaCached.ServerCapabilities.GetProviderSchemaOptional {
+			logger.Trace("GRPCProvider: GetProviderSchema: serving from global schema cache", "address", p.Addr)
+			return schemaCached
 		}
 	}
 
 	// If the local cache is non-zero, we know this instance has called
-	// GetProviderSchema at least once and we can return early.
+	// GetProviderSchema at least once, so has satisfied the possible requirement of `GetProviderSchemaOptional=false`.
+	// This means that we can return early now using the locally cached schema, without making this call again.
 	if p.schema.Provider.Block != nil {
 		return p.schema
 	}
@@ -140,13 +147,21 @@ func (p *GRPCProvider) GetProviderSchema() (resp providers.GetProviderSchemaResp
 		resp.ServerCapabilities.GetProviderSchemaOptional = protoResp.ServerCapabilities.GetProviderSchemaOptional
 	}
 
-	// set the global cache if we can
+	// Set the global provider cache so that future calls to this provider can use the cached value.
+	// Crucially, this doesn't look at GetProviderSchemaOptional, because the layers above could use this cache
+	// *without* creating an instance of this provider. And if there is no instance,
+	// then we don't need to set up anything (cause there is nothing to set up), so we need no call
+	// to the providers GetSchema rpc.
 	if !p.Addr.IsZero() {
 		providers.SchemaCache.Set(p.Addr, resp)
 	}
 
-	// always store this here in the client for providers that are not able to
-	// use GetProviderSchemaOptional
+	// Always store this here in the client for providers that are not able to use GetProviderSchemaOptional.
+	// Crucially, this indicates that we've made at least one call to GetProviderSchema to this instance of the provider,
+	// which means in the future we'll be able to return using this cache
+	// (because the possible setup contained in the GetProviderSchema call has happened).
+	// If GetProviderSchemaOptional is true then this cache won't actually ever be used, because the calls to this method
+	// will be satisfied by the global provider cache.
 	p.schema = resp
 
 	return resp
@@ -669,7 +684,7 @@ func (p *GRPCProvider) ReadDataSource(r providers.ReadDataSourceRequest) (resp p
 	return resp
 }
 
-// closing the grpc connection is final, and terraform will call it at the end of every phase.
+// closing the grpc connection is final, and tofu will call it at the end of every phase.
 func (p *GRPCProvider) Close() error {
 	logger.Trace("GRPCProvider: Close")
 

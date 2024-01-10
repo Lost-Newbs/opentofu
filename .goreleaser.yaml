@@ -10,6 +10,8 @@ builds:
   - env:
       - CGO_ENABLED=0
 
+    main: ./cmd/tofu
+
     flags:
       - "-mod=readonly"
       - "-trimpath"
@@ -175,22 +177,51 @@ nfpms:
     section: default
     contents:
       - src: ./LICENSE
-        dst: /usr/share/doc/nfpm/copyright
+        dst: /usr/share/doc/opentofu/copyright
         file_info:
           mode: 0444
+    rpm:
+      signature:
+        key_file: "{{ if index .Env \"GPG_KEY_FILE\"  }}{{.Env.GPG_KEY_FILE}}{{ end }}"
+    deb:
+      signature:
+        key_file: "{{ if index .Env \"GPG_KEY_FILE\"  }}{{.Env.GPG_KEY_FILE}}{{ end }}"
+
+snapcrafts:
+  - name: opentofu
+    publish: true
+    summary: OpenTofu lets you declaratively manage your cloud infrastructure.
+    description: |
+      OpenTofu is an OSS tool for building, changing, and versioning infrastructure
+      safely and efficiently. OpenTofu can manage existing and popular service
+      providers as well as custom in-house solutions.
+    base: core22
+    grade: stable
+    confinement: classic
+    license: MPL-2.0
+    apps:
+      tofu:
+        command: tofu
+        aliases: [tofu]
 
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
 
 signs:
-  - artifacts: checksum
+  - artifacts: all
+    id: cosign
     cmd: cosign
     certificate: "${artifact}.pem"
-    args: ["sign-blob", "--oidc-issuer=https://token.actions.githubusercontent.com", "--output-certificate=${certificate}", "--output-signature=${signature}", "${artifact}", "--yes"]
+    args: [ "sign-blob", "--oidc-issuer=https://token.actions.githubusercontent.com", "--output-certificate=${certificate}", "--output-signature=${signature}", "${artifact}", "--yes" ]
+  - artifacts: all
+    signature: "${artifact}.gpgsig"
+    id: gpg
+    cmd: gpg
+    args: ["--batch", "-u", "{{ .Env.GPG_FINGERPRINT }}", "--output", "${signature}", "--detach-sign", "${artifact}" ]
 
 docker_signs:
   - artifacts: all
-    args: ["sign", "--oidc-issuer=https://token.actions.githubusercontent.com", "${artifact}@${digest}", "--yes"]
+    args: [ "sign", "--oidc-issuer=https://token.actions.githubusercontent.com", "${artifact}@${digest}", "--yes" ]
 
 snapshot:
   name_template: "{{ .Version }}-next"
@@ -200,5 +231,4 @@ changelog:
 
 release:
   prerelease: auto
-  # If you want to examine the release before its live, uncomment this line:
-  # draft: false
+  draft: true

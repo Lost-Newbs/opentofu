@@ -1,13 +1,15 @@
 # OpenTofu
 
-- Manifesto: https://opentofu.org/manifesto
-- About the OpenTofu fork: https://opentofu.org/fork
-- [Join our Slack community!](https://join.slack.com/t/opentfcommunity/shared_invite/zt-237chyryd-mFULiefrbYGMYQoG72BUpQ)
+- [Manifesto](https://opentofu.org/manifesto)
+- [About the OpenTofu fork](https://opentofu.org/fork)
+- [How to install](https://opentofu.org/docs/intro/install)
+- [Join our Slack community!](https://opentofu.org/slack)
+- [Weekly OpenTofu Status Updates](WEEKLY_UPDATES.md)
 
 ![](https://raw.githubusercontent.com/opentofu/brand-artifacts/main/full/transparent/SVG/on-dark.svg#gh-dark-mode-only)
 ![](https://raw.githubusercontent.com/opentofu/brand-artifacts/main/full/transparent/SVG/on-light.svg#gh-light-mode-only)
 
-**Important Note: This repository is currently a work in progress while we're preparing it for the first alpha release and fine-tuning the community contribution process. Please read the [announcement post](https://opentofu.org/fork) for important context and the [contributing docs](CONTRIBUTING.md) for instructions on how to contribute. Additionally, please be mindful that building this repository in its current state and running it might put you in violation of the [Terraform Registry ToS](https://web.archive.org/web/https://registry.terraform.io/terms), if that's where you fetch your providers or modules from.**
+**Important Note: This repository is currently a work in progress while we're preparing it for the first stable release and fine-tuning the community contribution process. Please read the [announcement post](https://opentofu.org/fork) for important context and the [contributing docs](CONTRIBUTING.md) for instructions on how to contribute.**
 
 OpenTofu is an OSS tool for building, changing, and versioning infrastructure safely and efficiently. OpenTofu can manage existing and popular service providers as well as custom in-house solutions.
 
@@ -28,6 +30,9 @@ This repository contains OpenTofu Core, which includes the command line interfac
 - To learn more about compiling OpenTofu and contributing suggested changes, refer to [the contributing guide](CONTRIBUTING.md).
 
 - To submit bug reports or enhancement requests, refer to the [contributing guide](CONTRIBUTING.md) as well.
+
+## Reporting security vulnerabilities
+If you've found a vulnerability or a potential vulnerability in OpenTofu please follow [Security Policy](https://github.com/opentofu/opentofu/security/policy). We'll send a confirmation email to acknowledge your report, and we'll send an additional email when we've identified the issue positively or negatively.
 
 ## License
 

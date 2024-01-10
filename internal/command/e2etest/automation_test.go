@@ -14,22 +14,18 @@ import (
 	"github.com/opentofu/opentofu/internal/plans"
 )
 
-// The tests in this file run through different scenarios recommended in our
-// "Running Terraform in Automation" guide:
-//     https://www.placeholderplaceholderplaceholder.io/guides/running-terraform-in-automation.html
-
 // TestPlanApplyInAutomation runs through the "main case" of init, plan, apply
 // using the specific command line options suggested in the guide.
 func TestPlanApplyInAutomation(t *testing.T) {
 	t.Parallel()
 
-	// This test reaches out to releases.hashicorp.com to download the
+	// This test reaches out to registry.opentofu.org to download the
 	// template and null providers, so it can only run if network access is
 	// allowed.
 	skipIfCannotAccessNetwork(t)
 
 	fixturePath := filepath.Join("testdata", "full-workflow-null")
-	tf := e2e.NewBinary(t, terraformBin, fixturePath)
+	tf := e2e.NewBinary(t, tofuBin, fixturePath)
 
 	// We advertise that _any_ non-empty value works, so we'll test something
 	// unconventional here.
@@ -130,13 +126,13 @@ func TestPlanApplyInAutomation(t *testing.T) {
 func TestAutoApplyInAutomation(t *testing.T) {
 	t.Parallel()
 
-	// This test reaches out to releases.hashicorp.com to download the
+	// This test reaches out to registry.opentofu.org to download the
 	// template and null providers, so it can only run if network access is
 	// allowed.
 	skipIfCannotAccessNetwork(t)
 
 	fixturePath := filepath.Join("testdata", "full-workflow-null")
-	tf := e2e.NewBinary(t, terraformBin, fixturePath)
+	tf := e2e.NewBinary(t, tofuBin, fixturePath)
 
 	// We advertise that _any_ non-empty value works, so we'll test something
 	// unconventional here.
@@ -196,13 +192,13 @@ func TestAutoApplyInAutomation(t *testing.T) {
 func TestPlanOnlyInAutomation(t *testing.T) {
 	t.Parallel()
 
-	// This test reaches out to releases.hashicorp.com to download the
+	// This test reaches out to registry.opentofu.org to download the
 	// template and null providers, so it can only run if network access is
 	// allowed.
 	skipIfCannotAccessNetwork(t)
 
 	fixturePath := filepath.Join("testdata", "full-workflow-null")
-	tf := e2e.NewBinary(t, terraformBin, fixturePath)
+	tf := e2e.NewBinary(t, tofuBin, fixturePath)
 
 	// We advertise that _any_ non-empty value works, so we'll test something
 	// unconventional here.

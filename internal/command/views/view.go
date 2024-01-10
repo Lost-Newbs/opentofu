@@ -20,7 +20,7 @@ type View struct {
 
 	compactWarnings bool
 
-	// When this is true it's a hint that Terraform is being run indirectly
+	// When this is true it's a hint that OpenTofu is being run indirectly
 	// via a wrapper script or other automation and so we may wish to replace
 	// direct examples of commands to run with more conceptual directions.
 	// However, we only do this on a best-effort basis, typically prioritizing
@@ -50,8 +50,8 @@ func NewView(streams *terminal.Streams) *View {
 
 // SetRunningInAutomation modifies the view's "running in automation" flag,
 // which causes some slight adjustments to certain messages that would normally
-// suggest specific Terraform commands to run, to make more conceptual gestures
-// instead for situations where the user isn't running Terraform directly.
+// suggest specific OpenTofu commands to run, to make more conceptual gestures
+// instead for situations where the user isn't running OpenTofu directly.
 //
 // For convenient use during initialization (in conjunction with NewView),
 // SetRunningInAutomation returns the reciever after modifying it.

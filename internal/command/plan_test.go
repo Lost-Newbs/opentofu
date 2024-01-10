@@ -50,6 +50,31 @@ func TestPlan(t *testing.T) {
 		t.Fatalf("bad: %d\n\n%s", code, output.Stderr())
 	}
 }
+func TestPlan_conditionalSensitive(t *testing.T) {
+	td := t.TempDir()
+	testCopyDir(t, testFixturePath("apply-plan-conditional-sensitive"), td)
+	defer testChdir(t, td)()
+
+	p := planFixtureProvider()
+	view, done := testView(t)
+	c := &PlanCommand{
+		Meta: Meta{
+			testingOverrides: metaOverridesForProvider(p),
+			View:             view,
+		},
+	}
+
+	args := []string{}
+	code := c.Run(args)
+	output := done(t).Stderr()
+	if code != 1 {
+		t.Fatalf("bad status code: %d\n\n%s", code, output)
+	}
+
+	if strings.Count(output, "Output refers to sensitive values") != 9 {
+		t.Fatal("Not all outputs have issue with refer to sensitive value", output)
+	}
+}
 
 func TestPlan_lockedState(t *testing.T) {
 	td := t.TempDir()
@@ -527,8 +552,8 @@ func TestPlan_refreshTrue(t *testing.T) {
 }
 
 // A consumer relies on the fact that running
-// terraform plan -refresh=false -refresh=true gives the same result as
-// terraform plan -refresh=true.
+// tofu plan -refresh=false -refresh=true gives the same result as
+// tofu plan -refresh=true.
 // While the flag logic itself is handled by the stdlib flags package (and code
 // in main() that is tested elsewhere), we verify the overall plan command
 // behaviour here in case we accidentally break this with additional logic.
@@ -890,7 +915,7 @@ func TestPlan_providerArgumentUnset(t *testing.T) {
 	}
 }
 
-// Test that terraform properly merges provider configuration that's split
+// Test that tofu properly merges provider configuration that's split
 // between config files and interactive input variables.
 // https://github.com/hashicorp/terraform/issues/28956
 func TestPlan_providerConfigMerge(t *testing.T) {
@@ -1246,7 +1271,7 @@ func TestPlan_init_required(t *testing.T) {
 		t.Fatalf("expected error, got success")
 	}
 	got := output.Stderr()
-	if !(strings.Contains(got, "tofu init") && strings.Contains(got, "provider registry.terraform.io/hashicorp/test: required by this configuration but no version is selected")) {
+	if !(strings.Contains(got, "tofu init") && strings.Contains(got, "provider registry.opentofu.org/hashicorp/test: required by this configuration but no version is selected")) {
 		t.Fatal("wrong error message in output:", got)
 	}
 }
@@ -1630,7 +1655,7 @@ func planFixtureSchema() *providers.GetProviderSchemaResponse {
 // planFixtureProvider returns a mock provider that is configured for basic
 // operation with the configuration in testdata/plan. This mock has
 // GetSchemaResponse and PlanResourceChangeFn populated, with the plan
-// step just passing through the new object proposed by Terraform Core.
+// step just passing through the new object proposed by OpenTofu Core.
 func planFixtureProvider() *tofu.MockProvider {
 	p := testProvider()
 	p.GetProviderSchemaResponse = planFixtureSchema()
@@ -1671,7 +1696,7 @@ func planVarsFixtureSchema() *providers.GetProviderSchemaResponse {
 // planVarsFixtureProvider returns a mock provider that is configured for basic
 // operation with the configuration in testdata/plan-vars. This mock has
 // GetSchemaResponse and PlanResourceChangeFn populated, with the plan
-// step just passing through the new object proposed by Terraform Core.
+// step just passing through the new object proposed by OpenTofu Core.
 func planVarsFixtureProvider() *tofu.MockProvider {
 	p := testProvider()
 	p.GetProviderSchemaResponse = planVarsFixtureSchema()

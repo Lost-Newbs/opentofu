@@ -25,12 +25,12 @@ func TestProvisionerPlugin(t *testing.T) {
 	}
 	t.Parallel()
 
-	// This test reaches out to releases.hashicorp.com to download the
+	// This test reaches out to registry.opentofu.org to download the
 	// template and null providers, so it can only run if network access is
 	// allowed.
 	skipIfCannotAccessNetwork(t)
 
-	tf := e2e.NewBinary(t, terraformBin, "testdata/provisioner-plugin")
+	tf := e2e.NewBinary(t, tofuBin, "testdata/provisioner-plugin")
 
 	// In order to do a decent end-to-end test for this case we will need a
 	// real enough provisioner plugin to try to run and make sure we are able

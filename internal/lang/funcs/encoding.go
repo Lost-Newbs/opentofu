@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"unicode/utf8"
@@ -178,6 +179,37 @@ var Base64GzipFunc = function.New(&function.Spec{
 	},
 })
 
+// Base64GunzipFunc constructs a function that Bae64 decodes a string and decompresses the result with gunzip.
+var Base64GunzipFunc = function.New(&function.Spec{
+	Params: []function.Parameter{
+		{
+			Name: "str",
+			Type: cty.String,
+		},
+	},
+	Type:         function.StaticReturnType(cty.String),
+	RefineResult: refineNotNull,
+	Impl: func(args []cty.Value, retType cty.Type) (cty.Value, error) {
+		str, strMarks := args[0].Unmark()
+		s := str.AsString()
+		sDec, err := base64.StdEncoding.DecodeString(s)
+		if err != nil {
+			return cty.UnknownVal(cty.String), fmt.Errorf("failed to decode base64 data %s", redactIfSensitive(s, strMarks))
+		}
+		sDecBuffer := bytes.NewReader(sDec)
+		gzipReader, err := gzip.NewReader(sDecBuffer)
+		if err != nil {
+			return cty.UnknownVal(cty.String), fmt.Errorf("failed to gunzip bytestream: %w", err)
+		}
+		gunzip, err := io.ReadAll(gzipReader)
+		if err != nil {
+			return cty.UnknownVal(cty.String), fmt.Errorf("failed to read gunzip raw data: %w", err)
+		}
+
+		return cty.StringVal(string(gunzip)), nil
+	},
+})
+
 // URLEncodeFunc constructs a function that applies URL encoding to a given string.
 var URLEncodeFunc = function.New(&function.Spec{
 	Params: []function.Parameter{
@@ -226,6 +258,13 @@ func Base64Encode(str cty.Value) (cty.Value, error) {
 // as UTF-8, then apply gzip compression, and then finally apply Base64 encoding.
 func Base64Gzip(str cty.Value) (cty.Value, error) {
 	return Base64GzipFunc.Call([]cty.Value{str})
+}
+
+// Base64Gunzip decodes a Base64-encoded string and uncompresses the result with gzip.
+//
+// Opentofu uses the "standard" Base64 alphabet as defined in RFC 4648 section 4.
+func Base64Gunzip(str cty.Value) (cty.Value, error) {
+	return Base64GunzipFunc.Call([]cty.Value{str})
 }
 
 // URLEncode applies URL encoding to a given string.

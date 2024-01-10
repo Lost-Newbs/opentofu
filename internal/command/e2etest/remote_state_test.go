@@ -10,12 +10,12 @@ import (
 	"github.com/opentofu/opentofu/internal/e2e"
 )
 
-func TestTerraformProviderRead(t *testing.T) {
-	// Ensure the terraform provider can correctly read a remote state
+func TestOpenTofuProviderRead(t *testing.T) {
+	// Ensure the tofu provider can correctly read a remote state
 
 	t.Parallel()
 	fixturePath := filepath.Join("testdata", "tf-provider")
-	tf := e2e.NewBinary(t, terraformBin, fixturePath)
+	tf := e2e.NewBinary(t, tofuBin, fixturePath)
 
 	//// INIT
 	_, stderr, err := tf.Run("init")

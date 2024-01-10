@@ -16,7 +16,7 @@ import (
 	"github.com/opentofu/opentofu/internal/tofu"
 )
 
-// GraphCommand is a Command implementation that takes a Terraform
+// GraphCommand is a Command implementation that takes a OpenTofu
 // configuration and outputs the dependency tree in graphical form.
 type GraphCommand struct {
 	Meta
@@ -42,7 +42,7 @@ func (c *GraphCommand) Run(args []string) int {
 		return 1
 	}
 
-	configPath, err := ModulePath(cmdFlags.Args())
+	configPath, err := modulePath(cmdFlags.Args())
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
@@ -135,7 +135,7 @@ func (c *GraphCommand) Run(args []string) int {
 	case "apply":
 		plan := lr.Plan
 
-		// Historically "terraform graph" would allow the nonsensical request to
+		// Historically "tofu graph" would allow the nonsensical request to
 		// render an apply graph without a plan, so we continue to support that
 		// here, though perhaps one day this should be an error.
 		if lr.Plan == nil {

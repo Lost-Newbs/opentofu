@@ -16,8 +16,7 @@ import (
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	openpgpErrors "github.com/ProtonMail/go-crypto/openpgp/errors"
-	openpgpPacket "github.com/ProtonMail/go-crypto/openpgp/packet"
-	tfaddr "github.com/hashicorp/terraform-registry-address"
+	tfaddr "github.com/opentofu/registry-address"
 )
 
 type packageAuthenticationResult int
@@ -30,12 +29,7 @@ const (
 
 const (
 	enforceGPGValidationEnvName = "OPENTOFU_ENFORCE_GPG_VALIDATION"
-)
-
-var (
-	// openpgpConfig is only populated during testing, so that a fake clock can be
-	// injected, preventing signature expiration errors.
-	openpgpConfig *openpgpPacket.Config
+	enforceGPGExpirationEnvName = "OPENTOFU_ENFORCE_GPG_EXPIRATION"
 )
 
 // PackageAuthenticationResult is returned from a PackageAuthentication
@@ -134,7 +128,7 @@ type PackageAuthenticationHashes interface {
 	// hashes with different schemes, which means that all of them are equally
 	// acceptable. Implementors may also return hashes that use schemes the
 	// current version of the authenticator would not allow but that could be
-	// accepted by other versions of Terraform, e.g. if a particular hash
+	// accepted by other versions of OpenTofu, e.g. if a particular hash
 	// scheme has been deprecated.
 	//
 	// Authenticators that don't use hashes as their authentication procedure
@@ -202,11 +196,11 @@ type packageHashAuthentication struct {
 
 // NewPackageHashAuthentication returns a PackageAuthentication implementation
 // that checks whether the contents of the package match whatever subset of the
-// given hashes are considered acceptable by the current version of Terraform.
+// given hashes are considered acceptable by the current version of OpenTofu.
 //
 // This uses the hash algorithms implemented by functions PackageHash and
 // MatchesHash. The PreferredHashes function will select which of the given
-// hashes are considered by Terraform to be the strongest verification, and
+// hashes are considered by OpenTofu to be the strongest verification, and
 // authentication succeeds as long as one of those matches.
 func NewPackageHashAuthentication(platform Platform, validHashes []Hash) PackageAuthentication {
 	requiredHashes := PreferredHashes(validHashes)
@@ -221,7 +215,7 @@ func (a packageHashAuthentication) AuthenticatePackage(localLocation PackageLoca
 	if len(a.RequiredHashes) == 0 {
 		// Indicates that none of the hashes given to
 		// NewPackageHashAuthentication were considered to be usable by this
-		// version of Terraform.
+		// version of OpenTofu.
 		return nil, fmt.Errorf("this version of OpenTofu does not support any of the checksum formats given for this provider")
 	}
 
@@ -247,9 +241,9 @@ func (a packageHashAuthentication) AuthenticatePackage(localLocation PackageLoca
 }
 
 func (a packageHashAuthentication) AcceptableHashes() []Hash {
-	// In this case we include even hashes the current version of Terraform
+	// In this case we include even hashes the current version of OpenTofu
 	// doesn't prefer, because this result is used for building a lock file
-	// and so it's helpful to include older hash formats that other Terraform
+	// and so it's helpful to include older hash formats that other OpenTofu
 	// versions might need in order to do authentication successfully.
 	return a.AllHashes
 }
@@ -360,6 +354,7 @@ type signatureAuthentication struct {
 	Signature      []byte
 	Keys           []SigningKey
 	ProviderSource *tfaddr.Provider
+	Meta           PackageMeta
 }
 
 // NewSignatureAuthentication returns a PackageAuthentication implementation
@@ -378,12 +373,13 @@ type signatureAuthentication struct {
 //
 // Any failure in the process of validating the signature will result in an
 // unauthenticated result.
-func NewSignatureAuthentication(document, signature []byte, keys []SigningKey, source *tfaddr.Provider) PackageAuthentication {
+func NewSignatureAuthentication(meta PackageMeta, document, signature []byte, keys []SigningKey, source *tfaddr.Provider) PackageAuthentication {
 	return signatureAuthentication{
 		Document:       document,
 		Signature:      signature,
 		Keys:           keys,
 		ProviderSource: source,
+		Meta:           meta,
 	}
 }
 
@@ -401,6 +397,11 @@ func (s signatureAuthentication) shouldEnforceGPGValidation() (bool, error) {
 	// otherwise if the environment variable is set to true, we should enforce GPG validation
 	enforceEnvVar, exists := os.LookupEnv(enforceGPGValidationEnvName)
 	return exists && enforceEnvVar == "true", nil
+}
+func (s signatureAuthentication) shouldEnforceGPGExpiration() bool {
+	// otherwise if the environment variable is set to true, we should enforce GPG expiration
+	enforceEnvVar, exists := os.LookupEnv(enforceGPGExpirationEnvName)
+	return exists && enforceEnvVar == "true"
 }
 
 func (s signatureAuthentication) AuthenticatePackage(location PackageLocation) (*PackageAuthenticationResult, error) {
@@ -424,6 +425,7 @@ func (s signatureAuthentication) AuthenticatePackage(location PackageLocation) (
 
 	// Find the key that signed the checksum file. This can fail if there is no
 	// valid signature for any of the provided keys.
+
 	_, keyID, err := s.findSigningKey()
 	if err != nil {
 		return nil, err
@@ -491,7 +493,13 @@ func (s signatureAuthentication) findSigningKey() (*SigningKey, string, error) {
 			return nil, "", fmt.Errorf("error decoding signing key: %w", err)
 		}
 
-		entity, err := openpgp.CheckDetachedSignature(keyring, bytes.NewReader(s.Document), bytes.NewReader(s.Signature), openpgpConfig)
+		entity, err := openpgp.CheckDetachedSignature(keyring, bytes.NewReader(s.Document), bytes.NewReader(s.Signature), nil)
+		if !s.shouldEnforceGPGExpiration() && (err == openpgpErrors.ErrSignatureExpired || err == openpgpErrors.ErrKeyExpired) {
+			// Internally openpgp will *only* return the Expired errors if all other checks have succeded
+			// This is currently the best way to work around expired provider keys
+			fmt.Printf("[WARN] Provider %s/%s (%v) gpg key expired, this will fail in future versions of OpenTofu\n", s.Meta.Provider.Namespace, s.Meta.Provider.Type, s.Meta.Provider.Hostname)
+			err = nil
+		}
 
 		// If the signature issuer does not match the key, keep trying the
 		// rest of the provided keys.

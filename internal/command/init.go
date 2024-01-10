@@ -31,6 +31,7 @@ import (
 	"github.com/opentofu/opentofu/internal/states"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 	"github.com/opentofu/opentofu/internal/tofu"
+	"github.com/opentofu/opentofu/internal/tofumigrate"
 	tfversion "github.com/opentofu/opentofu/version"
 )
 
@@ -100,7 +101,7 @@ func (c *InitCommand) Run(args []string) int {
 
 	// Validate the arg count and get the working directory
 	args = cmdFlags.Args()
-	path, err := ModulePath(args)
+	path, err := modulePath(args)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
@@ -249,11 +250,11 @@ func (c *InitCommand) Run(args []string) int {
 	// whole configuration tree.
 	config, confDiags := c.loadConfigWithTests(path, testsDirectory)
 	// configDiags will be handled after the version constraint check, since an
-	// incorrect version of terraform may be producing errors for configuration
+	// incorrect version of tofu may be producing errors for configuration
 	// constructs added in later versions.
 
 	// Before we go further, we'll check to make sure none of the modules in
-	// the configuration declare that they don't support this Terraform
+	// the configuration declare that they don't support this OpenTofu
 	// version, so we can produce a version-related error message rather than
 	// potentially-confusing downstream errors.
 	versionDiags := tofu.CheckCoreVersionRequirements(config)
@@ -263,7 +264,7 @@ func (c *InitCommand) Run(args []string) int {
 	}
 
 	// We've passed the core version check, now we can show errors from the
-	// configuration and backend initialisation.
+	// configuration and backend initialization.
 
 	// Now, we can check the diagnostics from the early configuration and the
 	// backend.
@@ -300,6 +301,18 @@ func (c *InitCommand) Run(args []string) int {
 				return 1
 			}
 		}
+	}
+
+	if state != nil {
+		// Since we now have the full configuration loaded, we can use it to migrate the in-memory state view
+		// prior to fetching providers.
+		migratedState, migrateDiags := tofumigrate.MigrateStateProviderAddresses(config, state)
+		diags = diags.Append(migrateDiags)
+		if migrateDiags.HasErrors() {
+			c.showDiagnostics(diags)
+			return 1
+		}
+		state = migratedState
 	}
 
 	// Now that we have loaded all modules, check the module tree for missing providers.
@@ -399,17 +412,17 @@ func (c *InitCommand) getModules(ctx context.Context, path, testsDir string, ear
 }
 
 func (c *InitCommand) initCloud(ctx context.Context, root *configs.Module, extraConfig rawFlags) (be backend.Backend, output bool, diags tfdiags.Diagnostics) {
-	ctx, span := tracer.Start(ctx, "initialize Terraform Cloud")
+	ctx, span := tracer.Start(ctx, "initialize cloud backend")
 	_ = ctx // prevent staticcheck from complaining to avoid a maintenence hazard of having the wrong ctx in scope here
 	defer span.End()
 
-	c.Ui.Output(c.Colorize().Color("\n[reset][bold]Initializing Terraform Cloud..."))
+	c.Ui.Output(c.Colorize().Color("\n[reset][bold]Initializing cloud backend..."))
 
 	if len(extraConfig.AllItems()) != 0 {
 		diags = diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
 			"Invalid command-line option",
-			"The -backend-config=... command line option is only for state backends, and is not applicable to Terraform Cloud-based configurations.\n\nTo change the set of workspaces associated with this configuration, edit the Cloud configuration block in the root module.",
+			"The -backend-config=... command line option is only for state backends, and is not applicable to cloud backend-based configurations.\n\nTo change the set of workspaces associated with this configuration, edit the Cloud configuration block in the root module.",
 		))
 		return nil, true, diags
 	}
@@ -441,7 +454,7 @@ func (c *InitCommand) initBackend(ctx context.Context, root *configs.Module, ext
 			diags = diags.Append(&hcl.Diagnostic{
 				Severity: hcl.DiagError,
 				Summary:  "Unsupported backend type",
-				Detail:   fmt.Sprintf("There is no explicit backend type named %q. To configure Terraform Cloud, declare a 'cloud' block instead.", backendType),
+				Detail:   fmt.Sprintf("There is no explicit backend type named %q. To configure cloud backend, declare a 'cloud' block instead.", backendType),
 				Subject:  &root.Backend.TypeRange,
 			})
 			return nil, true, diags
@@ -515,9 +528,9 @@ func (c *InitCommand) getProviders(ctx context.Context, config *configs.Config, 
 	ctx, span := tracer.Start(ctx, "install providers")
 	defer span.End()
 
-	// Dev overrides cause the result of "terraform init" to be irrelevant for
+	// Dev overrides cause the result of "tofu init" to be irrelevant for
 	// any overridden providers, so we'll warn about it to avoid later
-	// confusion when Terraform ends up using a different provider than the
+	// confusion when OpenTofu ends up using a different provider than the
 	// lock file called for.
 	diags = diags.Append(c.providerDevOverrideInitWarnings())
 
@@ -533,7 +546,13 @@ func (c *InitCommand) getProviders(ctx context.Context, config *configs.Config, 
 		reqs = reqs.Merge(stateReqs)
 	}
 
+	potentialProviderConflicts := make(map[string][]string)
+
 	for providerAddr := range reqs {
+		if providerAddr.Namespace == "hashicorp" || providerAddr.Namespace == "opentofu" {
+			potentialProviderConflicts[providerAddr.Type] = append(potentialProviderConflicts[providerAddr.Type], providerAddr.ForDisplay())
+		}
+
 		if providerAddr.IsLegacy() {
 			diags = diags.Append(tfdiags.Sourceless(
 				tfdiags.Error,
@@ -541,6 +560,20 @@ func (c *InitCommand) getProviders(ctx context.Context, config *configs.Config, 
 				fmt.Sprintf(
 					"This configuration or its associated state refers to the unqualified provider %q.\n\nYou must complete the Terraform 0.13 upgrade process before upgrading to later versions.",
 					providerAddr.Type,
+				),
+			))
+		}
+	}
+
+	for name, addrs := range potentialProviderConflicts {
+		if len(addrs) > 1 {
+			diags = diags.Append(tfdiags.Sourceless(
+				tfdiags.Warning,
+				"Potential provider misconfiguration",
+				fmt.Sprintf(
+					"OpenTofu has detected multiple providers of type %s (%s) which may be a misconfiguration.\n\nIf this is intentional you can ignore this warning",
+					name,
+					strings.Join(addrs, ", "),
 				),
 			))
 		}
@@ -560,7 +593,7 @@ func (c *InitCommand) getProviders(ctx context.Context, config *configs.Config, 
 		inst = c.providerInstaller()
 	} else {
 		// If the user passes at least one -plugin-dir then that circumvents
-		// the usual sources and forces Terraform to consult only the given
+		// the usual sources and forces OpenTofu to consult only the given
 		// directories. Anything not available in one of those directories
 		// is not available for installation.
 		source := c.providerCustomLocalDirectorySource(pluginDirs)
@@ -645,6 +678,10 @@ func (c *InitCommand) getProviders(ctx context.Context, config *configs.Config, 
 					)
 				}
 
+				if provider.Hostname == addrs.DefaultProviderRegistryHost {
+					suggestion += "\n\nIf you believe this provider is missing from the registry, please submit a issue on the OpenTofu Registry https://github.com/opentofu/registry/issues/"
+				}
+
 				diags = diags.Append(tfdiags.Sourceless(
 					tfdiags.Error,
 					"Failed to query available provider packages",
@@ -698,8 +735,8 @@ func (c *InitCommand) getProviders(ctx context.Context, config *configs.Config, 
 			default:
 				diags = diags.Append(tfdiags.Sourceless(
 					tfdiags.Error,
-					"Failed to query available provider packages",
-					fmt.Sprintf("Could not retrieve the list of available versions for provider %s: %s",
+					"Failed to resolve provider packages",
+					fmt.Sprintf("Could not resolve provider %s: %s",
 						provider.ForDisplay(), err,
 					),
 				))
@@ -826,7 +863,7 @@ func (c *InitCommand) getProviders(ctx context.Context, config *configs.Config, 
 			// We're going to use this opportunity to track if we have any
 			// "incomplete" installs of providers. An incomplete install is
 			// when we are only going to write the local hashes into our lock
-			// file which means a `terraform init` command will fail in future
+			// file which means a `tofu init` command will fail in future
 			// when used on machines of a different architecture.
 			//
 			// We want to print a warning about this.
@@ -868,7 +905,7 @@ func (c *InitCommand) getProviders(ctx context.Context, config *configs.Config, 
 			if thirdPartySigned {
 				c.Ui.Info(fmt.Sprintf("\nProviders are signed by their developers.\n" +
 					"If you'd like to know more about provider signing, you can read about it here:\n" +
-					"https://www.placeholderplaceholderplaceholder.io/docs/cli/plugins/signing.html"))
+					"https://opentofu.org/docs/cli/plugins/signing/"))
 			}
 		},
 	}
@@ -948,7 +985,7 @@ func (c *InitCommand) getProviders(ctx context.Context, config *configs.Config, 
 
 		if previousLocks.Empty() {
 			// A change from empty to non-empty is special because it suggests
-			// we're running "terraform init" for the first time against a
+			// we're running "tofu init" for the first time against a
 			// new configuration. In that case we'll take the opportunity to
 			// say a little about what the dependency lock file is, for new
 			// users or those who are upgrading from a previous Terraform
@@ -1119,7 +1156,7 @@ Usage: tofu [global options] init [options]
 
 Options:
 
-  -backend=false          Disable backend or Terraform Cloud initialization
+  -backend=false          Disable backend or cloud backend initialization
                           for this configuration and use what was previously
                           initialized instead.
 
@@ -1174,14 +1211,16 @@ Options:
   -lockfile=MODE          Set a dependency lockfile mode.
                           Currently only "readonly" is valid.
 
-  -ignore-remote-version  A rare option used for Terraform Cloud and the remote backend
+  -ignore-remote-version  A rare option used for cloud backend and the remote backend
                           only. Set this to ignore checking that the local and remote
                           OpenTofu versions use compatible state representations, making
                           an operation proceed even when there is a potential mismatch.
                           See the documentation on configuring OpenTofu with
-                          Terraform Cloud for more information.
+                          cloud backend for more information.
 
-  -test-directory=path    Set the OpenTofu test directory, defaults to "tests".
+  -test-directory=path    Set the OpenTofu test directory, defaults to "tests". When set, the
+                          test command will search for test files in the current directory and
+                          in the one specified by the flag.
 
 `
 	return strings.TrimSpace(helpText)
@@ -1192,7 +1231,7 @@ func (c *InitCommand) Synopsis() string {
 }
 
 const errInitConfigError = `
-[reset]OpenTofu encountered problems during initialisation, including problems
+[reset]OpenTofu encountered problems during initialization, including problems
 with the configuration, described below.
 
 The OpenTofu configuration must be valid before initialization so that
@@ -1219,7 +1258,7 @@ const outputInitSuccess = `
 `
 
 const outputInitSuccessCloud = `
-[reset][bold][green]Terraform Cloud has been successfully initialized![reset][green]
+[reset][bold][green]Cloud backend has been successfully initialized![reset][green]
 `
 
 const outputInitSuccessCLI = `[reset][green]
@@ -1233,7 +1272,7 @@ commands will detect it and remind you to do so if necessary.
 `
 
 const outputInitSuccessCLICloud = `[reset][green]
-You may now begin working with Terraform Cloud. Try running "tofu plan" to
+You may now begin working with cloud backend. Try running "tofu plan" to
 see any changes that are required for your infrastructure.
 
 If you ever set or change modules or OpenTofu Settings, run "tofu init"
@@ -1241,7 +1280,7 @@ again to reinitialize your working directory.
 `
 
 // providerProtocolTooOld is a message sent to the CLI UI if the provider's
-// supported protocol versions are too old for the user's version of terraform,
+// supported protocol versions are too old for the user's version of tofu,
 // but a newer version of the provider is compatible.
 const providerProtocolTooOld = `Provider %q v%s is not compatible with OpenTofu %s.
 Provider version %s is the latest compatible version. Select it with the following version constraint:
@@ -1254,8 +1293,8 @@ Consult the documentation for this provider for more information on compatibilit
 `
 
 // providerProtocolTooNew is a message sent to the CLI UI if the provider's
-// supported protocol versions are too new for the user's version of terraform,
-// and the user could either upgrade terraform or choose an older version of the
+// supported protocol versions are too new for the user's version of tofu,
+// and the user could either upgrade tofu or choose an older version of the
 // provider.
 const providerProtocolTooNew = `Provider %q v%s is not compatible with OpenTofu %s.
 You need to downgrade to v%s or earlier. Select it with the following constraint:

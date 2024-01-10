@@ -19,7 +19,7 @@ var validName = regexp.MustCompile(`^[a-z0-9_]+$`)
 // schema.
 //
 // This can be used within unit tests to detect when a given schema is invalid,
-// and is run when terraform loads provider schemas during NewContext.
+// and is run when tofu loads provider schemas during NewContext.
 func (b *Block) InternalValidate() error {
 	if b == nil {
 		return fmt.Errorf("top-level block schema is nil")
@@ -128,7 +128,7 @@ func (a *Attribute) internalValidate(name, prefix string) error {
 
 	if a.Type != cty.NilType {
 		if a.NestedType != nil {
-			err = multierror.Append(fmt.Errorf("%s: Type and NestedType cannot both be set", name))
+			err = multierror.Append(err, fmt.Errorf("%s: Type and NestedType cannot both be set", name))
 		}
 	}
 

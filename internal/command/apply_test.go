@@ -67,6 +67,35 @@ func TestApply(t *testing.T) {
 		t.Fatal("state should not be nil")
 	}
 }
+func TestApply_conditionalSensitive(t *testing.T) {
+	// Create a temporary working directory that is empty
+	td := t.TempDir()
+	testCopyDir(t, testFixturePath("apply-plan-conditional-sensitive"), td)
+	defer testChdir(t, td)()
+
+	p := applyFixtureProvider()
+
+	view, done := testView(t)
+	c := &ApplyCommand{
+		Meta: Meta{
+			testingOverrides: metaOverridesForProvider(p),
+			View:             view,
+		},
+	}
+
+	args := []string{
+		"-auto-approve",
+	}
+	code := c.Run(args)
+	output := done(t).Stderr()
+	if code != 1 {
+		t.Fatalf("bad status code: %d\n\n%s", code, output)
+	}
+
+	if strings.Count(output, "Output refers to sensitive values") != 9 {
+		t.Fatal("Not all outputs have issue with refer to sensitive value", output)
+	}
+}
 
 func TestApply_path(t *testing.T) {
 	// Create a temporary working directory that is empty
@@ -419,8 +448,7 @@ func TestApply_defaultState(t *testing.T) {
 	}
 
 	// create an existing state file
-	localState := statemgr.NewFilesystem(statePath)
-	if err := localState.WriteState(states.NewState()); err != nil {
+	if err := statemgr.WriteAndPersist(statemgr.NewFilesystem(statePath), states.NewState(), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -568,7 +596,7 @@ result = foo
 	testStateOutput(t, statePath, expected)
 }
 
-// When only a partial set of the variables are set, Terraform
+// When only a partial set of the variables are set, OpenTofu
 // should still ask for the unset ones by default (with -input=true)
 func TestApply_inputPartial(t *testing.T) {
 	// Create a temporary working directory that is empty
@@ -710,8 +738,7 @@ func TestApply_plan_backup(t *testing.T) {
 	// create a state file that needs to be backed up
 	fs := statemgr.NewFilesystem(statePath)
 	fs.StateSnapshotMeta()
-	err := fs.WriteState(states.NewState())
-	if err != nil {
+	if err := statemgr.WriteAndPersist(fs, states.NewState(), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1704,8 +1731,8 @@ func TestApply_disableBackup(t *testing.T) {
 	}
 }
 
-// Test that the Terraform env is passed through
-func TestApply_terraformEnv(t *testing.T) {
+// Test that the OpenTofu env is passed through
+func TestApply_tofuEnv(t *testing.T) {
 	// Create a temporary working directory that is empty
 	td := t.TempDir()
 	testCopyDir(t, testFixturePath("apply-tofu-workspace"), td)
@@ -1741,8 +1768,8 @@ output = default
 	testStateOutput(t, statePath, expected)
 }
 
-// Test that the Terraform env is passed through
-func TestApply_terraformEnvNonDefault(t *testing.T) {
+// Test that the OpenTofu env is passed through
+func TestApply_tofuEnvNonDefault(t *testing.T) {
 	// Create a temporary working directory that is empty
 	td := t.TempDir()
 	testCopyDir(t, testFixturePath("apply-tofu-workspace"), td)
@@ -2158,7 +2185,7 @@ func applyFixtureSchema() *providers.GetProviderSchemaResponse {
 // operation with the configuration in testdata/apply. This mock has
 // GetSchemaResponse, PlanResourceChangeFn, and ApplyResourceChangeFn populated,
 // with the plan/apply steps just passing through the data determined by
-// Terraform Core.
+// OpenTofu Core.
 func applyFixtureProvider() *tofu.MockProvider {
 	p := testProvider()
 	p.GetProviderSchemaResponse = applyFixtureSchema()

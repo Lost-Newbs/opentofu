@@ -29,10 +29,15 @@ import (
 	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 	"github.com/opentofu/opentofu/internal/tofu"
+	"github.com/opentofu/opentofu/version"
 
 	uuid "github.com/hashicorp/go-uuid"
 	"golang.org/x/oauth2"
 )
+
+// This is HashiCorp's cloud host.
+// There are a few special circumstances that depend on this whitelisted hostname.
+const tfeHost = "app.terraform.io"
 
 // LoginCommand is a Command implementation that runs an interactive login
 // flow for a remote service host. It then stashes credentials in a tfrc
@@ -186,7 +191,7 @@ func (c *LoginCommand) Run(args []string) int {
 		case clientConfig.SupportedGrantTypes.Has(disco.OAuthAuthzCodeGrant):
 			// We prefer an OAuth code grant if the server supports it.
 			oauthToken, tokenDiags = c.interactiveGetTokenByCode(hostname, credsCtx, clientConfig)
-		case clientConfig.SupportedGrantTypes.Has(disco.OAuthOwnerPasswordGrant) && hostname == svchost.Hostname("app.terraform.io"):
+		case clientConfig.SupportedGrantTypes.Has(disco.OAuthOwnerPasswordGrant) && hostname == svchost.Hostname(tfeHost):
 			// The password grant type is allowed only for Terraform Cloud SaaS.
 			// Note this case is purely theoretical at this point, as TFC currently uses
 			// its own bespoke login protocol (tfe)
@@ -226,7 +231,7 @@ func (c *LoginCommand) Run(args []string) int {
 	}
 
 	c.Ui.Output("\n---------------------------------------------------------------------------------\n")
-	if hostname == "app.terraform.io" { // Terraform Cloud
+	if hostname == tfeHost { // Terraform Cloud
 		var motd struct {
 			Message string        `json:"msg"`
 			Errors  []interface{} `json:"errors"`
@@ -314,12 +319,12 @@ func (c *LoginCommand) outputDefaultTFELoginSuccess(dispHostname string) {
 
 func (c *LoginCommand) outputDefaultTFCLoginSuccess() {
 	c.Ui.Output(c.Colorize().Color(strings.TrimSpace(`
-[green][bold]Success![reset] [bold]Logged in to Terraform Cloud[reset]
+[green][bold]Success![reset] [bold]Logged in to cloud backend[reset]
 ` + "\n")))
 }
 
 func (c *LoginCommand) logMOTDError(err error) {
-	log.Printf("[TRACE] login: An error occurred attempting to fetch a message of the day for Terraform Cloud: %s", err)
+	log.Printf("[TRACE] login: An error occurred attempting to fetch a message of the day for cloud backend: %s", err)
 }
 
 // Help implements cli.Command.
@@ -648,6 +653,10 @@ func (c *LoginCommand) interactiveGetTokenByUI(hostname svchost.Hostname, credsC
 		Token:    token,
 		Headers:  make(http.Header),
 	}
+
+	// Update user-agent from 'go-tfe' to opentofu
+	cfg.Headers.Set("User-Agent", httpclient.OpenTofuUserAgent(version.String()))
+
 	client, err := tfe.NewClient(cfg)
 	if err != nil {
 		diags = diags.Append(fmt.Errorf("Failed to create API client: %w", err))
