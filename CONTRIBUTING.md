@@ -92,8 +92,10 @@ go test ./internal/addrs
 The easiest way to get started with Docker on Windows and MacOS is using [Docker Desktop](https://www.docker.com/products/docker-desktop/), though other solutions exist. On Linux, follow the steps to [install Docker Engine](https://docs.docker.com/engine/install/) and run the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/). Then to build, run:
 
 ```sh
-docker run --rm -v "$PWD":/usr/src/opentofu -w /usr/src/opentofu golang:1.20.7 go build -v -buildvcs=false .
+docker run --rm -v "$PWD":/usr/src/opentofu -w /usr/src/opentofu golang:1.20.7 GOOS=linux GOARCH=amd64 go build -v -buildvcs=false .
 ```
+
+Replace the values for `GOOS` snd `GOARCH` with those of your preferred target, e.g. `GOOS=windows` to build a Windows binary.
 
 This will create the `opentofu` binary in the current working directory, which you can run with `./opentofu --version` or [move it to $PATH](https://ubuntuforums.org/showthread.php?t=1056425) for Linux to find it running just `opentofu --version`.
 
